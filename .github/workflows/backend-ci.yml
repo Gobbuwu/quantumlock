@@ -1,0 +1,38 @@
+# Compiles the backend and runs its tests on every push and pull request that touches it.
+# Tests use an in-memory H2 database, so no PostgreSQL service is needed here.
+name: Backend CI
+
+on:
+  push:
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend-ci.yml"
+  pull_request:
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend-ci.yml"
+
+# Least privilege: this workflow only needs to read the code.
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      # Actions are pinned to an exact commit so a changed tag cannot change what runs here.
+      # Dependabot (.github/dependabot.yml) proposes updates.
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+      - name: Build and test
+        run: ./mvnw -B verify

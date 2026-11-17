@@ -1,0 +1,8 @@
+# Settings for the "test" profile (@ActiveProfiles("test")). They are applied on top of the real
+# application.yml, so tests exercise the same configuration the app runs with. Only the database
+# is replaced: an in-memory H2 database in PostgreSQL mode, so tests need no PostgreSQL and no password.
+spring:
+  datasource:
+    url: jdbc:h2:mem:quantumlock;MODE=PostgreSQL;DB_CLOSE_DELAY=-1
+    username: sa
+    password: ""

@@ -1,0 +1,3 @@
+# Windows batch files need Windows line endings, shell scripts need Unix ones, whatever the computer.
+*.cmd text eol=crlf
+mvnw text eol=lf

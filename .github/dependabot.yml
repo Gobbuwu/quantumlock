@@ -1,0 +1,12 @@
+# Dependabot opens pull requests when a newer version of a dependency or a GitHub Action exists,
+# and GitHub alerts on known vulnerabilities in the versions used here.
+version: 2
+updates:
+  - package-ecosystem: maven
+    directory: /backend
+    schedule:
+      interval: weekly
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
