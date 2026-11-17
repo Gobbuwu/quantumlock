@@ -1,16 +1,14 @@
-# Compiles the backend and runs its tests on every push and pull request that touches it.
+# Compiles the backend and runs its tests on every pull request and on every push to main.
+# It runs for every pull request, also ones that do not touch the backend, because the branch
+# rule on main requires this check: a pull request where it never ran could not be merged.
 # Tests use an in-memory H2 database, so no PostgreSQL service is needed here.
 name: Backend CI
 
 on:
   push:
-    paths:
-      - "backend/**"
-      - ".github/workflows/backend-ci.yml"
+    branches:
+      - main
   pull_request:
-    paths:
-      - "backend/**"
-      - ".github/workflows/backend-ci.yml"
   # Adds a "Run workflow" button on the Actions tab, to start this check by hand.
   workflow_dispatch:
 
