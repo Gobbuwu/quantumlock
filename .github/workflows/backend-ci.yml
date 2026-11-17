@@ -11,6 +11,8 @@ on:
     paths:
       - "backend/**"
       - ".github/workflows/backend-ci.yml"
+  # Adds a "Run workflow" button on the Actions tab, to start this check by hand.
+  workflow_dispatch:
 
 # Least privilege: this workflow only needs to read the code.
 permissions:
