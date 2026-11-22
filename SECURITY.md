@@ -28,6 +28,7 @@ own computer only (no TLS, no rate limiting yet). That is the default and it is 
 | Private keys leak through the API or the logs | Responses carry only the id, algorithm, status, public key and time. Failures are logged by type only | `KeyPairResponse`, `KeyService` |
 | Anyone on the computer uses the API | Every path except `/api/v1/health` and the API docs needs a valid key in the `X-API-Key` header. Missing, malformed, unknown, revoked or duplicated keys all get the same 401 `{"error":"unauthorized"}`. A key in the URL is ignored | `ApiKeyAuthFilter`, `ApiKeyService` |
 | A stolen database exposes API keys | Keys are 32 bytes from `SecureRandom`, shown once and stored only as their SHA-256 hash, compared with `MessageDigest.isEqual`. A revoked key stops working on the next request | `ApiKeys`, `api_keys.key_hash` |
+| Bad input crashes or probes the key exchange | Ciphertexts are decoded as strict Base64 and must be exactly 1568 bytes before Bouncy Castle sees them. Keys are loaded with the `ML-KEM-1024` key factory only. Every malformed input gets the same 400 `invalid_request`; a tampered but well-formed ciphertext gets a normal answer with a different secret (FIPS 203 implicit rejection). Library failures become a fixed 500 `operation_failed`, logged by type only. Every call is audited | `KeyExchangeService` |
 | One team reads another team's keys | Every key lookup includes the account id. Another team's key, an unknown id and a malformed id all get the same 404 | `KeyPairRepository`, `ApiExceptionHandler` |
 | Secrets or keys committed by accident | `.env` files and key files (`*.pem`, `*.key`, `*.p12`, `*.jks`) are ignored by git | `.gitignore` |
 
@@ -35,6 +36,9 @@ own computer only (no TLS, no rate limiting yet). That is the default and it is 
 
 `mvn verify` runs these on every push (GitHub Actions) and locally:
 
+- `KeyExchangeApiTest` round-trips encapsulation and decapsulation through the API and with an independent
+  Bouncy Castle client, and checks implicit rejection, malformed and weaker-parameter ciphertexts, wrong key
+  types, inactive keys, team isolation and the audit entries.
 - `ApiKeyAuthTest` checks every way of failing the API-key check, keys in the URL, revocation, that only
   the hash is stored and that a key acts for its own team only. `ApiKeysTest` checks the key format and hashing.
 - `ApiSecurityTest` starts the application and attacks it over real HTTP connections: forged Host headers,
@@ -57,6 +61,8 @@ Nothing here makes the application impossible to attack. These gaps are known an
 - Anyone who can run the backend on the computer can issue a key with `issue-api-key`. That person can also
   read the database and `.env`, so this gives them nothing new.
 - **No TLS.** Traffic is plain HTTP, which is acceptable only because it never leaves the computer.
+  Encapsulate and decapsulate return the shared secret in the response, so TLS is required before the API
+  leaves the computer.
 - **No rate limiting.** A local program can send as many requests as it likes.
 - A client that announces a body and then stays silent occupies one server thread for up to 10 seconds
   (20 seconds if it stalls in the middle of a body). A reverse proxy is the usual protection.
@@ -101,6 +107,8 @@ Done in task 3.3. Keep these true:
 - A custom header also protects against cross-site requests, because browsers will not send it without CORS permission.
 
 ### Encapsulation, decapsulation and signatures (task 3.4 and later)
+
+Done for encapsulation and decapsulation in task 3.4. Keep these true, and follow them for signatures:
 
 - Decode Base64 strictly and check sizes before calling the library: an ML-KEM-1024 public key is 1568 bytes
   (1590 in the X.509 encoding the API returns),
