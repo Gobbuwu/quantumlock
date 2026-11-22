@@ -73,6 +73,10 @@ Then open:
 - API docs (Swagger UI): http://localhost:8080/swagger-ui.html, where you can try the key endpoints:
   - `POST /api/v1/keys/generate` with `{"algorithm": "ML-KEM-1024"}` or `{"algorithm": "ML-DSA-65"}`
   - `GET /api/v1/keys` and `GET /api/v1/keys/{keyPairId}`
+  - `POST /api/v1/keys/{keyPairId}/encapsulate` (no body) returns a fresh `sharedSecret` and the `ciphertext` that
+    carries it; `POST /api/v1/keys/{keyPairId}/decapsulate` with `{"ciphertext": "..."}` returns the same
+    `sharedSecret`. ML-KEM-1024 key pairs only. A sender can also encapsulate with the public key on their own
+    computer and send only the ciphertext.
   - `POST /api/v1/api-keys`, `GET /api/v1/api-keys` and `DELETE /api/v1/api-keys/{apiKeyId}`
 
 Every endpoint except the health check needs an API key in the `X-API-Key` header. Issue the first key for the
@@ -107,6 +111,8 @@ Tests use an in-memory H2 database, so PostgreSQL does not need to be running. T
   decryption and is never returned, and that one team cannot see another team's keys (`KeyApiTest`)
 - API-key authentication: every kind of bad key gets the same 401, keys in the URL are ignored, revocation
   works at once and only the hash is stored (`ApiKeyAuthTest`, `ApiKeysTest`, `IssueApiKeyCommandTest`)
+- ML-KEM-1024 key exchange through the API: round trips, a client encapsulating on its own, a tampered ciphertext,
+  malformed input, wrong key types, other teams' keys and the audit log (`KeyExchangeApiTest`)
 - the private-key encryption: tampering, a moved ciphertext and a wrong master key are all detected (`PrivateKeyEncryptorTest`)
 - attacks over real HTTP against the running application: forged Host header, oversized body, TRACE,
   path tricks, information leaks (`ApiSecurityTest`)
