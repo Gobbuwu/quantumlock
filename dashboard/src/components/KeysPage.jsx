@@ -3,7 +3,7 @@ import { describeError } from '../api/client.js'
 import GenerateKeyForm from './GenerateKeyForm.jsx'
 import KeyTable from './KeyTable.jsx'
 
-export default function KeysPage({ api }) {
+export default function KeysPage({ api, onUnauthorized }) {
   const [keys, setKeys] = useState([])
   const [status, setStatus] = useState('loading') // loading | ready | error
   const [loadError, setLoadError] = useState(null)
@@ -14,10 +14,14 @@ export default function KeysPage({ api }) {
       setKeys(await api.listKeys())
       setStatus('ready')
     } catch (error) {
+      if (error?.code === 'unauthorized' && onUnauthorized) {
+        onUnauthorized()
+        return
+      }
       setLoadError(describeError(error))
       setStatus('error')
     }
-  }, [api])
+  }, [api, onUnauthorized])
 
   useEffect(() => {
     load()
@@ -25,7 +29,11 @@ export default function KeysPage({ api }) {
 
   return (
     <>
-      <GenerateKeyForm api={api} onGenerated={(key) => setKeys((current) => [key, ...current])} />
+      <GenerateKeyForm
+        api={api}
+        onGenerated={(key) => setKeys((current) => [key, ...current])}
+        onUnauthorized={onUnauthorized}
+      />
 
       <section className="key-list" aria-labelledby="key-list-title">
         <h2 id="key-list-title">Your key pairs</h2>

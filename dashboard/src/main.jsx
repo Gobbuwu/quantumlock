@@ -6,10 +6,10 @@ import '@fontsource/instrument-sans/600.css'
 import '@fontsource/ibm-plex-mono/400.css'
 import './styles.css'
 import App from './App.jsx'
-import { api } from './api/index.js'
+import { api, keyStore } from './api/index.js'
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
-    <App api={api} />
+    <App api={api} keyStore={keyStore} />
   </StrictMode>,
 )

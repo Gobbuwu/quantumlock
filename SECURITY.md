@@ -119,7 +119,8 @@ Done in task 3.3. Keep these true:
 ### Dashboard (task 2.3 and later)
 
 - Allow exactly the dashboard's origin in CORS. Never `*`.
-- No API key in the React source or in any committed file.
+- No API key in the React source or in any committed file. Done in task 4.2: the user types the key in, it is kept
+  in memory (or, if they choose, in `sessionStorage` until the tab closes) and sent only in the `X-API-Key` header.
 
 ## Reporting a problem
 
