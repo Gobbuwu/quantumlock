@@ -175,4 +175,17 @@ class SecurityFiltersTest {
             throw new UnsupportedOperationException();
         }
     }
+
+    @Test
+    void onlyHealthAndDocsArePublic() {
+        for (String path : new String[] {"/api/v1/health", "/v3/api-docs", "/v3/api-docs/swagger-config",
+                "/swagger-ui.html", "/swagger-ui/index.html"}) {
+            assertTrue(ApiKeyAuthFilter.isPublicPath(path), path);
+        }
+        for (String path : new String[] {"/api/v1/keys", "/api/v1/health/", "/api/v1/health;x", "/api/v1/HEALTH",
+                "/api/v1/health/../keys", "/v3/api-docs/../../api/v1/keys", "/swagger-ui/../api/v1/keys",
+                "/v3/api-docs/a/b", "/", "", "/actuator"}) {
+            assertFalse(ApiKeyAuthFilter.isPublicPath(path), path);
+        }
+    }
 }

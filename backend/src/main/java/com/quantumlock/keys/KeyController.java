@@ -33,7 +33,8 @@ public class KeyController {
     @PostMapping("/generate")
     @Operation(summary = "Generate a key pair. The private key is stored encrypted and is never returned.")
     public ResponseEntity<KeyPairResponse> generate(@Valid @RequestBody GenerateKeyRequest request) {
-        KeyPairEntity created = keys.generate(currentAccount.accountId(), request.algorithm());
+        KeyPairEntity created =
+                keys.generate(currentAccount.accountId(), currentAccount.apiKeyId(), request.algorithm());
         return ResponseEntity.status(HttpStatus.CREATED).body(KeyPairResponse.from(created));
     }
 

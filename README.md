@@ -73,8 +73,19 @@ Then open:
 - API docs (Swagger UI): http://localhost:8080/swagger-ui.html, where you can try the key endpoints:
   - `POST /api/v1/keys/generate` with `{"algorithm": "ML-KEM-1024"}` or `{"algorithm": "ML-DSA-65"}`
   - `GET /api/v1/keys` and `GET /api/v1/keys/{keyPairId}`
+  - `POST /api/v1/api-keys`, `GET /api/v1/api-keys` and `DELETE /api/v1/api-keys/{apiKeyId}`
 
-Until API-key login exists (task 3.3), every request acts for the demo team from `database/seed.sql`.
+Every endpoint except the health check needs an API key in the `X-API-Key` header. Issue the first key for the
+demo team from `database/seed.sql` once (the backend does not need to be running):
+
+```bash
+cd backend
+./mvnw spring-boot:run "-Dspring-boot.run.arguments=issue-api-key"     # Windows: mvnw spring-boot:run "-Dspring-boot.run.arguments=issue-api-key"
+```
+
+The key (`ql_test_...`) is printed once and only its hash is stored, so copy it somewhere safe and never commit it.
+In Swagger UI click **Authorize** and paste it. With a key you can also create more keys (`POST /api/v1/api-keys`),
+list them (`GET /api/v1/api-keys`) and revoke one (`DELETE /api/v1/api-keys/{apiKeyId}`).
 
 The backend listens on this computer only (`127.0.0.1`) and answers only to the host names `localhost` and
 `127.0.0.1`. That is on purpose, see [SECURITY.md](SECURITY.md). Other settings are listed in `backend/.env.example`.
@@ -94,6 +105,8 @@ Tests use an in-memory H2 database, so PostgreSQL does not need to be running. T
 - the health endpoint and the Swagger docs (`HealthControllerTest`, `ApiDocsDisabledTest`)
 - key generation through the API, including that the stored private key is encrypted, still works after
   decryption and is never returned, and that one team cannot see another team's keys (`KeyApiTest`)
+- API-key authentication: every kind of bad key gets the same 401, keys in the URL are ignored, revocation
+  works at once and only the hash is stored (`ApiKeyAuthTest`, `ApiKeysTest`, `IssueApiKeyCommandTest`)
 - the private-key encryption: tampering, a moved ciphertext and a wrong master key are all detected (`PrivateKeyEncryptorTest`)
 - attacks over real HTTP against the running application: forged Host header, oversized body, TRACE,
   path tricks, information leaks (`ApiSecurityTest`)

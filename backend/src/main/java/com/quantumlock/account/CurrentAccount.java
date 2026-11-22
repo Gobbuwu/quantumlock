@@ -4,11 +4,12 @@ import java.util.UUID;
 
 /**
  * Tells the API which account the current request acts for. Every key operation is scoped to it.
- *
- * <p>Until API-key login exists (task 3.3) this is always the demo account from database/seed.sql
- * ({@link DevCurrentAccount}). Task 3.3 replaces that with the account of the caller's API key.
+ * It comes from the caller's API key (task 3.3), never from anything else the client sends.
  */
 public interface CurrentAccount {
 
     UUID accountId();
+
+    /** The API key used for this request, recorded in the audit log. */
+    UUID apiKeyId();
 }

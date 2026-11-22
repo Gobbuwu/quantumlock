@@ -28,12 +28,16 @@ import javax.crypto.KeyGenerator;
 
 import com.jayway.jsonpath.JsonPath;
 import com.quantumlock.audit.AuditLogEntity;
+import com.quantumlock.auth.ApiKeyService;
+import com.quantumlock.auth.ApiKeys;
+import com.quantumlock.auth.IssuedApiKey;
 import com.quantumlock.audit.AuditLogRepository;
 import com.quantumlock.crypto.CryptoProviders;
 import com.quantumlock.crypto.PrivateKeyEncryptor;
 import org.bouncycastle.jcajce.SecretKeyWithEncapsulation;
 import org.bouncycastle.jcajce.spec.KEMExtractSpec;
 import org.bouncycastle.jcajce.spec.KEMGenerateSpec;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -66,6 +70,20 @@ class KeyApiTest {
 
     @Autowired
     private PrivateKeyEncryptor encryptor;
+
+    @Autowired
+    private ApiKeyService apiKeys;
+
+    /** A fresh API key of the demo team for each test. */
+    private String demoKey;
+    private UUID demoKeyId;
+
+    @BeforeEach
+    void issueApiKey() {
+        IssuedApiKey issued = apiKeys.issue(DEMO_ACCOUNT, "test");
+        demoKey = issued.key();
+        demoKeyId = issued.entity().getApiKeyId();
+    }
 
     @Test
     void mlKemKeyIsStoredEncryptedAndStillWorks() throws Exception {
@@ -138,6 +156,7 @@ class KeyApiTest {
         assertEquals("generate", entries.get(0).getAction());
         assertEquals("success", entries.get(0).getStatus());
         assertEquals(DEMO_ACCOUNT, entries.get(0).getAccountId());
+        assertEquals(demoKeyId, entries.get(0).getApiKeyId(), "the audit entry names the API key that was used");
     }
 
     @Test
@@ -145,7 +164,7 @@ class KeyApiTest {
         long before = keyPairs.count();
 
         for (String algorithm : new String[] {"RSA-2048", "ML-KEM-768", "ML-KEM-512", "ml-kem-1024", " ML-KEM-1024"}) {
-            mockMvc.perform(post("/api/v1/keys/generate")
+            mockMvc.perform(post("/api/v1/keys/generate").header(ApiKeys.HEADER, demoKey)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("{\"algorithm\":\"" + algorithm + "\"}"))
                     .andExpect(status().isBadRequest())
@@ -158,7 +177,8 @@ class KeyApiTest {
     void malformedRequestsAreRefused() throws Exception {
         for (String content : new String[] {"", "{}", "{\"algorithm\":\"\"}", "{\"algorithm\":null}", "not json",
                 "{\"algorithm\":[\"ML-KEM-1024\"]}"}) {
-            mockMvc.perform(post("/api/v1/keys/generate").contentType(MediaType.APPLICATION_JSON).content(content))
+            mockMvc.perform(post("/api/v1/keys/generate").header(ApiKeys.HEADER, demoKey)
+                            .contentType(MediaType.APPLICATION_JSON).content(content))
                     .andExpect(status().isBadRequest())
                     .andExpect(jsonPath("$.error").value("invalid_request"));
         }
@@ -169,7 +189,7 @@ class KeyApiTest {
         UUID mine = UUID.fromString(JsonPath.read(generate("ML-KEM-1024"), "$.keyPairId"));
         UUID theirs = storeKeyForOtherAccount();
 
-        String body = mockMvc.perform(get("/api/v1/keys"))
+        String body = mockMvc.perform(get("/api/v1/keys").header(ApiKeys.HEADER, demoKey))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
 
@@ -188,21 +208,21 @@ class KeyApiTest {
         UUID mine = UUID.fromString(JsonPath.read(generate("ML-DSA-65"), "$.keyPairId"));
         UUID theirs = storeKeyForOtherAccount();
 
-        mockMvc.perform(get("/api/v1/keys/" + mine))
+        mockMvc.perform(get("/api/v1/keys/" + mine).header(ApiKeys.HEADER, demoKey))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.keyPairId").value(mine.toString()))
                 .andExpect(jsonPath("$.algorithm").value("ML-DSA-65"));
 
         // Another team's key, an unknown id and something that is not an id all look the same.
         for (String id : new String[] {theirs.toString(), UUID.randomUUID().toString(), "not-a-uuid"}) {
-            mockMvc.perform(get("/api/v1/keys/" + id))
+            mockMvc.perform(get("/api/v1/keys/" + id).header(ApiKeys.HEADER, demoKey))
                     .andExpect(status().isNotFound())
                     .andExpect(jsonPath("$.error").value("key_not_found"));
         }
     }
 
     private String generate(String algorithm) throws Exception {
-        return mockMvc.perform(post("/api/v1/keys/generate")
+        return mockMvc.perform(post("/api/v1/keys/generate").header(ApiKeys.HEADER, demoKey)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"algorithm\":\"" + algorithm + "\"}"))
                 .andExpect(status().isCreated())
