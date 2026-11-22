@@ -76,7 +76,8 @@ Then open:
   - `POST /api/v1/keys/{keyPairId}/encapsulate` (no body) returns a fresh `sharedSecret` and the `ciphertext` that
     carries it; `POST /api/v1/keys/{keyPairId}/decapsulate` with `{"ciphertext": "..."}` returns the same
     `sharedSecret`. ML-KEM-1024 key pairs only. A sender can also encapsulate with the public key on their own
-    computer and send only the ciphertext.
+    computer and send only the ciphertext. The `sharedSecret` is the 32-byte FIPS 203 output K with no extra key
+    derivation, so it matches what any other FIPS 203 ML-KEM library computes.
   - `POST /api/v1/api-keys`, `GET /api/v1/api-keys` and `DELETE /api/v1/api-keys/{apiKeyId}`
 
 Every endpoint except the health check needs an API key in the `X-API-Key` header. Issue the first key for the
@@ -117,6 +118,8 @@ Tests use an in-memory H2 database, so PostgreSQL does not need to be running. T
 - attacks over real HTTP against the running application: forged Host header, oversized body, TRACE,
   path tricks, information leaks (`ApiSecurityTest`)
 - the decisions inside the security filters (`SecurityFiltersTest`) and the secure defaults in `application.yml` (`SecureDefaultsTest`)
+- ML-KEM-1024 key generation, encapsulation and decapsulation against NIST's own FIPS 203 test vectors, run
+  through the application's code (`MlKem1024KnownAnswerTest`)
 - ML-KEM-1024 and ML-DSA-65 round trips (`PostQuantumSmokeTest`) and how Bouncy Castle reacts to tampered
   ciphertexts, malformed keys and forged signatures (`PostQuantumMisuseTest`)
 

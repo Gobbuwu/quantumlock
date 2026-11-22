@@ -36,8 +36,12 @@ own computer only (no TLS, no rate limiting yet). That is the default and it is 
 
 `mvn verify` runs these on every push (GitHub Actions) and locally:
 
+- `MlKem1024KnownAnswerTest` checks key generation, encapsulation and decapsulation against all 60 ML-KEM-1024
+  test vectors in NIST's ACVP-Server repository (FIPS 203), including implicit rejection of modified
+  ciphertexts. The shared secret is the FIPS 203 output K itself: Bouncy Castle's default extra key
+  derivation is turned off so other FIPS 203 libraries get the same secret.
 - `KeyExchangeApiTest` round-trips encapsulation and decapsulation through the API and with an independent
-  Bouncy Castle client, and checks implicit rejection, malformed and weaker-parameter ciphertexts, wrong key
+  FIPS 203 client (Bouncy Castle's low-level ML-KEM API), and checks implicit rejection, malformed and weaker-parameter ciphertexts, wrong key
   types, inactive keys, team isolation and the audit entries.
 - `ApiKeyAuthTest` checks every way of failing the API-key check, keys in the URL, revocation, that only
   the hash is stored and that a key acts for its own team only. `ApiKeysTest` checks the key format and hashing.

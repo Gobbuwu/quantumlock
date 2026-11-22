@@ -10,10 +10,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import java.security.KeyFactory;
 import java.security.KeyPairGenerator;
-import java.security.PublicKey;
-import java.security.spec.X509EncodedKeySpec;
+import java.security.SecureRandom;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
@@ -28,6 +26,10 @@ import com.quantumlock.auth.ApiKeyService;
 import com.quantumlock.auth.ApiKeys;
 import com.quantumlock.auth.IssuedApiKey;
 import com.quantumlock.crypto.CryptoProviders;
+import org.bouncycastle.crypto.SecretWithEncapsulation;
+import org.bouncycastle.crypto.kems.MLKEMGenerator;
+import org.bouncycastle.crypto.params.AsymmetricKeyParameter;
+import org.bouncycastle.crypto.util.PublicKeyFactory;
 import org.bouncycastle.jcajce.SecretKeyWithEncapsulation;
 import org.bouncycastle.jcajce.spec.KEMGenerateSpec;
 import org.bouncycastle.jcajce.spec.MLKEMParameterSpec;
@@ -98,16 +100,14 @@ class KeyExchangeApiTest {
                         .contentType(MediaType.APPLICATION_JSON).content("{\"algorithm\":\"ML-KEM-1024\"}"))
                 .andReturn().getResponse().getContentAsString();
         String id = JsonPath.read(body, "$.keyPairId");
-        PublicKey publicKey = KeyFactory.getInstance("ML-KEM-1024", CryptoProviders.BC)
-                .generatePublic(new X509EncodedKeySpec(decode(JsonPath.read(body, "$.publicKey"))));
+        AsymmetricKeyParameter publicKey = PublicKeyFactory.createKey(decode(JsonPath.read(body, "$.publicKey")));
 
-        // What a sender does with Bouncy Castle and only the published public key.
-        KeyGenerator sender = KeyGenerator.getInstance("ML-KEM", CryptoProviders.BC);
-        sender.init(new KEMGenerateSpec(publicKey, "AES"));
-        SecretKeyWithEncapsulation sent = (SecretKeyWithEncapsulation) sender.generateKey();
+        // What a sender does with only the published public key and a plain FIPS 203 ML-KEM.Encaps, here
+        // Bouncy Castle's low-level API, which adds no key derivation step of its own.
+        SecretWithEncapsulation sent = new MLKEMGenerator(new SecureRandom()).generateEncapsulated(publicKey);
 
         byte[] received = decapsulate(demoKey, id, Base64.getEncoder().encodeToString(sent.getEncapsulation()));
-        assertArrayEquals(sent.getEncoded(), received);
+        assertArrayEquals(sent.getSecret(), received);
     }
 
     @Test
