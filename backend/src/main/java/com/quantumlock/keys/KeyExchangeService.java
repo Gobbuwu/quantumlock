@@ -59,8 +59,12 @@ public class KeyExchangeService {
     private final SecureRandom random = new SecureRandom();
     private final Clock clock = Clock.systemUTC();
 
-    public KeyExchangeService(KeyPairRepository keyPairs, PrivateKeyEncryptor encryptor, AuditLogRepository auditLogs) {
+    static {
+        // In a static block so the static encapsulate and decapsulate helpers can rely on it too.
         CryptoProviders.register();
+    }
+
+    public KeyExchangeService(KeyPairRepository keyPairs, PrivateKeyEncryptor encryptor, AuditLogRepository auditLogs) {
         this.keyPairs = keyPairs;
         this.encryptor = encryptor;
         this.auditLogs = auditLogs;
@@ -78,13 +82,7 @@ public class KeyExchangeService {
     public Encapsulation encapsulate(UUID accountId, UUID apiKeyId, UUID keyPairId) {
         KeyPairEntity keyPair = usableKey(accountId, apiKeyId, keyPairId, AuditAction.ENCAPSULATE);
         try {
-            PublicKey publicKey = KeyFactory.getInstance(KEY_FACTORY, CryptoProviders.BC)
-                    .generatePublic(new X509EncodedKeySpec(keyPair.getPublicKey()));
-            KeyGenerator generator = KeyGenerator.getInstance("ML-KEM", CryptoProviders.BC);
-            generator.init(new KEMGenerateSpec(publicKey, "AES"), random);
-            SecretKeyWithEncapsulation secret = (SecretKeyWithEncapsulation) generator.generateKey();
-            Encapsulation result = new Encapsulation(secret.getEncapsulation(), secret.getEncoded());
-            checkSizes(result.ciphertext().length, result.sharedSecret().length);
+            Encapsulation result = encapsulate(keyPair.getPublicKey(), random);
             audit(accountId, apiKeyId, keyPairId, AuditAction.ENCAPSULATE, true);
             return result;
         } catch (GeneralSecurityException | RuntimeException e) {
@@ -106,12 +104,7 @@ public class KeyExchangeService {
         byte[] encodedPrivateKey = null;
         try {
             encodedPrivateKey = encryptor.decrypt(keyPair.getPrivateKeyCiphertext(), keyPairId, accountId);
-            PrivateKey privateKey = KeyFactory.getInstance(KEY_FACTORY, CryptoProviders.BC)
-                    .generatePrivate(new PKCS8EncodedKeySpec(encodedPrivateKey));
-            KeyGenerator generator = KeyGenerator.getInstance("ML-KEM", CryptoProviders.BC);
-            generator.init(new KEMExtractSpec(privateKey, ciphertext, "AES"));
-            byte[] sharedSecret = generator.generateKey().getEncoded();
-            checkSizes(CIPHERTEXT_BYTES, sharedSecret.length);
+            byte[] sharedSecret = decapsulate(encodedPrivateKey, ciphertext);
             audit(accountId, apiKeyId, keyPairId, AuditAction.DECAPSULATE, true);
             return sharedSecret;
         } catch (GeneralSecurityException | RuntimeException e) {
@@ -119,6 +112,38 @@ public class KeyExchangeService {
         } finally {
             PrivateKeyEncryptor.wipe(encodedPrivateKey);
         }
+    }
+
+    /**
+     * ML-KEM-1024 encapsulation (FIPS 203 ML-KEM.Encaps) with an X.509-encoded public key.
+     * The shared secret is the FIPS 203 output K itself. Bouncy Castle's default would pass K through
+     * an extra key derivation function, which no other FIPS 203 implementation does, so a client that
+     * encapsulates on its own computer would get a different secret. withNoKdf() prevents that.
+     */
+    static Encapsulation encapsulate(byte[] x509PublicKey, SecureRandom random) throws GeneralSecurityException {
+        PublicKey publicKey = KeyFactory.getInstance(KEY_FACTORY, CryptoProviders.BC)
+                .generatePublic(new X509EncodedKeySpec(x509PublicKey));
+        KeyGenerator generator = KeyGenerator.getInstance("ML-KEM", CryptoProviders.BC);
+        generator.init(new KEMGenerateSpec.Builder(publicKey, "AES", SHARED_SECRET_BYTES * 8).withNoKdf().build(), random);
+        SecretKeyWithEncapsulation secret = (SecretKeyWithEncapsulation) generator.generateKey();
+        Encapsulation result = new Encapsulation(secret.getEncapsulation(), secret.getEncoded());
+        checkSizes(result.ciphertext().length, result.sharedSecret().length);
+        return result;
+    }
+
+    /**
+     * ML-KEM-1024 decapsulation (FIPS 203 ML-KEM.Decaps) with a PKCS#8-encoded private key. Returns K
+     * with no extra key derivation, matching {@link #encapsulate(byte[], SecureRandom)}. A tampered
+     * ciphertext gives an unrelated secret (implicit rejection), not an error.
+     */
+    static byte[] decapsulate(byte[] pkcs8PrivateKey, byte[] ciphertext) throws GeneralSecurityException {
+        PrivateKey privateKey = KeyFactory.getInstance(KEY_FACTORY, CryptoProviders.BC)
+                .generatePrivate(new PKCS8EncodedKeySpec(pkcs8PrivateKey));
+        KeyGenerator generator = KeyGenerator.getInstance("ML-KEM", CryptoProviders.BC);
+        generator.init(new KEMExtractSpec.Builder(privateKey, ciphertext, "AES", SHARED_SECRET_BYTES * 8).withNoKdf().build());
+        byte[] sharedSecret = generator.generateKey().getEncoded();
+        checkSizes(CIPHERTEXT_BYTES, sharedSecret.length);
+        return sharedSecret;
     }
 
     /**

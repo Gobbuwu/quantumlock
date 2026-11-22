@@ -14,10 +14,16 @@ import org.springframework.stereotype.Component;
 @Component
 public class PostQuantumKeyGenerator {
 
-    private final SecureRandom random = new SecureRandom();
+    private final SecureRandom random;
 
     public PostQuantumKeyGenerator() {
+        this(new SecureRandom());
+    }
+
+    /** For known-answer tests only, which supply the NIST seed bytes. */
+    PostQuantumKeyGenerator(SecureRandom random) {
         CryptoProviders.register();
+        this.random = random;
     }
 
     public KeyPair generate(Algorithm algorithm) throws GeneralSecurityException {
