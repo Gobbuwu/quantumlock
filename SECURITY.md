@@ -5,8 +5,8 @@ This file says what is protected today, what is not protected yet, and the rules
 
 ## Where the project stands
 
-The backend is a skeleton. It has one endpoint (`GET /api/v1/health`) plus the API documentation.
-It does not create, store or return any key yet, and it has **no login or API-key check yet** (task 3.3).
+The backend generates and stores key pairs (task 3.2), with private keys encrypted at rest (task 3.1).
+It has **no login or API-key check yet** (task 3.3): every request acts for the demo team from `database/seed.sql`.
 Until task 3.3 is merged, the backend must stay reachable from the developer's own computer only.
 That is the default and it is enforced by the settings below.
 
@@ -24,6 +24,9 @@ That is the default and it is enforced by the settings below.
 | Other web sites read API responses | No CORS permission is given to any origin | Spring default, checked in `ApiSecurityTest` |
 | API documentation exposed where it should not be | `API_DOCS_ENABLED=false` switches off Swagger UI and the OpenAPI document | `application.yml` |
 | Vulnerable or tampered dependencies | Versions are pinned, Dependabot watches Maven and GitHub Actions, the CI workflow has read-only permissions and its actions are pinned to exact commits | `pom.xml`, `.github/` |
+| A stolen database exposes private keys | Every private key is encrypted with AES-256-GCM under `MASTER_KEY`, which is never stored in the database or the repository. The key pair id and account id are bound into the encryption, so a ciphertext copied to another row or account does not decrypt | `PrivateKeyEncryptor`, `EncryptionConfig` |
+| Private keys leak through the API or the logs | Responses carry only the id, algorithm, status, public key and time. Failures are logged by type only | `KeyPairResponse`, `KeyService` |
+| One team reads another team's keys | Every key lookup includes the account id. Another team's key, an unknown id and a malformed id all get the same 404 | `KeyPairRepository`, `ApiExceptionHandler` |
 | Secrets or keys committed by accident | `.env` files and key files (`*.pem`, `*.key`, `*.p12`, `*.jks`) are ignored by git | `.gitignore` |
 
 ## How it is checked
@@ -69,8 +72,8 @@ All of these, not some of them:
 
 ### Key generation and storage (tasks 3.1 and 3.2)
 
-- Private keys are encrypted before they are stored (AES-256-GCM, a fresh random 12-byte nonce per record).
-  The master key comes from an environment variable, never from the repository or the database.
+- Done in tasks 3.1 and 3.2: private keys are encrypted before they are stored (AES-256-GCM, a fresh random
+  12-byte nonce per record), and the master key comes from `MASTER_KEY`, never from the repository or the database.
 - Private keys, shared secrets and API keys are never written to logs, error messages or the audit log.
   The audit log records who did what to which key id.
 - Reload stored keys through `KeyFactory`. Bouncy Castle 1.87 rejects a stored private key that was altered
@@ -89,7 +92,8 @@ All of these, not some of them:
 
 ### Encapsulation, decapsulation and signatures (task 3.4 and later)
 
-- Decode Base64 strictly and check sizes before calling the library: an ML-KEM-1024 public key is 1568 bytes,
+- Decode Base64 strictly and check sizes before calling the library: an ML-KEM-1024 public key is 1568 bytes
+  (1590 in the X.509 encoding the API returns),
   a ciphertext 1568 bytes, an ML-DSA-65 signature 3309 bytes. A ciphertext of the wrong length makes
   Bouncy Castle throw an unchecked `IllegalArgumentException`, which would otherwise become a 500.
 - Parse every key a client sends with `KeyFactory.getInstance("ML-KEM-1024", "BC")`. The general `"ML-KEM"`

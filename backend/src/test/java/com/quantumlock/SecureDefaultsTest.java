@@ -31,6 +31,14 @@ class SecureDefaultsTest {
     }
 
     @Test
+    void masterKeyHasNoDefault() throws IOException {
+        String yml = applicationYml();
+
+        assertTrue(yml.contains("master-key: ${MASTER_KEY}"), "the master key must come from MASTER_KEY");
+        assertFalse(yml.contains("${MASTER_KEY:"), "MASTER_KEY must not have a default value");
+    }
+
+    @Test
     void errorResponsesNeverIncludeInternalDetails() throws IOException {
         String yml = applicationYml();
 
