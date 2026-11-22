@@ -6,9 +6,9 @@ This file says what is protected today, what is not protected yet, and the rules
 ## Where the project stands
 
 The backend generates and stores key pairs (task 3.2), with private keys encrypted at rest (task 3.1).
-It has **no login or API-key check yet** (task 3.3): every request acts for the demo team from `database/seed.sql`.
-Until task 3.3 is merged, the backend must stay reachable from the developer's own computer only.
-That is the default and it is enforced by the settings below.
+Every endpoint except the health check and the API documentation needs an API key (task 3.3), and each
+request acts only for the team that owns the key. The backend must still stay reachable from the developer's
+own computer only (no TLS, no rate limiting yet). That is the default and it is enforced by the settings below.
 
 ## What is in place
 
@@ -26,6 +26,8 @@ That is the default and it is enforced by the settings below.
 | Vulnerable or tampered dependencies | Versions are pinned, Dependabot watches Maven and GitHub Actions, the CI workflow has read-only permissions and its actions are pinned to exact commits | `pom.xml`, `.github/` |
 | A stolen database exposes private keys | Every private key is encrypted with AES-256-GCM under `MASTER_KEY`, which is never stored in the database or the repository. The key pair id and account id are bound into the encryption, so a ciphertext copied to another row or account does not decrypt | `PrivateKeyEncryptor`, `EncryptionConfig` |
 | Private keys leak through the API or the logs | Responses carry only the id, algorithm, status, public key and time. Failures are logged by type only | `KeyPairResponse`, `KeyService` |
+| Anyone on the computer uses the API | Every path except `/api/v1/health` and the API docs needs a valid key in the `X-API-Key` header. Missing, malformed, unknown, revoked or duplicated keys all get the same 401 `{"error":"unauthorized"}`. A key in the URL is ignored | `ApiKeyAuthFilter`, `ApiKeyService` |
+| A stolen database exposes API keys | Keys are 32 bytes from `SecureRandom`, shown once and stored only as their SHA-256 hash, compared with `MessageDigest.isEqual`. A revoked key stops working on the next request | `ApiKeys`, `api_keys.key_hash` |
 | One team reads another team's keys | Every key lookup includes the account id. Another team's key, an unknown id and a malformed id all get the same 404 | `KeyPairRepository`, `ApiExceptionHandler` |
 | Secrets or keys committed by accident | `.env` files and key files (`*.pem`, `*.key`, `*.p12`, `*.jks`) are ignored by git | `.gitignore` |
 
@@ -33,6 +35,8 @@ That is the default and it is enforced by the settings below.
 
 `mvn verify` runs these on every push (GitHub Actions) and locally:
 
+- `ApiKeyAuthTest` checks every way of failing the API-key check, keys in the URL, revocation, that only
+  the hash is stored and that a key acts for its own team only. `ApiKeysTest` checks the key format and hashing.
 - `ApiSecurityTest` starts the application and attacks it over real HTTP connections: forged Host headers,
   an oversized body, the TRACE method, a path trick against the header rules, a cross-origin request,
   probes for developer and configuration paths, and checks for leaked versions or stack traces.
@@ -47,7 +51,11 @@ That is the default and it is enforced by the settings below.
 
 Nothing here makes the application impossible to attack. These gaps are known and accepted for now:
 
-- **No authentication yet.** Every caller on the same computer can use every endpoint. Task 3.3 closes this.
+- **No rate limiting on failed API-key checks.** Guessing a 256-bit key is not practical, but a local program
+  can still send as many attempts as it likes. Needed before the API leaves the computer.
+- Creating and revoking API keys is not in the audit log yet: `audit_logs.action` allows only key-pair actions.
+- Anyone who can run the backend on the computer can issue a key with `issue-api-key`. That person can also
+  read the database and `.env`, so this gives them nothing new.
 - **No TLS.** Traffic is plain HTTP, which is acceptable only because it never leaves the computer.
 - **No rate limiting.** A local program can send as many requests as it likes.
 - A client that announces a body and then stays silent occupies one server thread for up to 10 seconds
@@ -61,7 +69,7 @@ Nothing here makes the application impossible to attack. These gaps are known an
 
 All of these, not some of them:
 
-1. API-key authentication on every endpoint except the health check (task 3.3).
+1. API-key authentication on every endpoint except the health check (done in task 3.3).
 2. TLS, directly or through a reverse proxy. Private keys and shared secrets travel in responses.
 3. `SERVER_ADDRESS` and `ALLOWED_HOSTS` set to the real address and host name, nothing wider.
 4. `API_DOCS_ENABLED=false`.
@@ -83,6 +91,8 @@ All of these, not some of them:
 - Use Spring Data methods or `@Query` with parameters. Never build SQL by joining strings.
 
 ### API keys (task 3.3)
+
+Done in task 3.3. Keep these true:
 
 - Generate API keys with `SecureRandom`, at least 32 random bytes. Show a key once, store only its SHA-256 hash.
 - Compare hashes with `MessageDigest.isEqual` (constant time).

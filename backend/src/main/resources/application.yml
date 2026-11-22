@@ -38,7 +38,7 @@ spring:
 server:
   # Listen on this computer only. Spring Boot would otherwise accept connections from the
   # whole network (for example everyone on the same Wi-Fi). Change this only together with
-  # TLS and API-key authentication (see SECURITY.md).
+  # TLS and rate limiting (see SECURITY.md, "Before the API is reachable from another computer").
   address: ${SERVER_ADDRESS:127.0.0.1}
   port: ${PORT:8080}
   tomcat:
@@ -60,8 +60,6 @@ quantumlock:
   # the app refuses to start without it. Keep it out of git and keep a copy: if it is lost, every stored
   # private key is lost with it. See backend/.env.example for how to create one.
   master-key: ${MASTER_KEY}
-  # Until API-key login exists (task 3.3) every request acts for this account: the demo team in database/seed.sql.
-  dev-account-id: ${DEV_ACCOUNT_ID:5f1c3a9e-7b2d-4e8f-9a6c-1d0e2b3c4a51}
   security:
     # Host names the API answers to (comma separated). Requests with any other Host header get 400.
     allowed-hosts: ${ALLOWED_HOSTS:localhost,127.0.0.1}

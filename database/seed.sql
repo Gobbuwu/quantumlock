@@ -3,10 +3,9 @@
 --
 -- Key pairs are not seeded. Their private keys must be encrypted with each developer's own
 -- MASTER_KEY, so they are created through the API (POST /api/v1/keys/generate) instead.
--- API keys are not seeded either: they are issued by the API-key feature (task 3.3).
+-- API keys are not seeded either: issue one with the backend's issue-api-key command (see README).
 
--- The demo team. Until API-key login exists (task 3.3) the backend acts as this account
--- (DEV_ACCOUNT_ID in backend/.env.example).
+-- The demo team. issue-api-key issues keys for this account unless told otherwise.
 INSERT INTO accounts (account_id, team_name, contact_email, plan_tier, created_at)
 VALUES ('5f1c3a9e-7b2d-4e8f-9a6c-1d0e2b3c4a51', 'QuantumLock Demo Team', 'demo-team@example.com', 'free',
         TIMESTAMP WITH TIME ZONE '2026-11-22 09:00:00+00');

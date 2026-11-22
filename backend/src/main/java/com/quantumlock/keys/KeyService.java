@@ -43,8 +43,9 @@ public class KeyService {
     /**
      * Generates a key pair, encrypts the private key, and stores both with a "generate" audit entry.
      * The private key never leaves this method unencrypted: it is not returned and not logged.
+     * {@code apiKeyId} is the key the caller used, recorded in the audit entry.
      */
-    public KeyPairEntity generate(UUID accountId, String algorithmName) {
+    public KeyPairEntity generate(UUID accountId, UUID apiKeyId, String algorithmName) {
         Algorithm algorithm = Algorithm.fromDisplayName(algorithmName)
                 .orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST, "unsupported_algorithm"));
 
@@ -61,13 +62,13 @@ public class KeyService {
         } catch (GeneralSecurityException | RuntimeException e) {
             // Logged without any key material: only the algorithm and the type of failure.
             log.error("Key generation failed for {} ({})", algorithm.displayName(), e.getClass().getSimpleName());
-            auditLogs.save(new AuditLogEntity(accountId, null, null, AuditAction.GENERATE, false, now));
+            auditLogs.save(new AuditLogEntity(accountId, apiKeyId, null, AuditAction.GENERATE, false, now));
             throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "key_generation_failed");
         } finally {
             PrivateKeyEncryptor.wipe(privateKey);
         }
         return store.saveNew(keyPair,
-                new AuditLogEntity(accountId, null, keyPairId, AuditAction.GENERATE, true, now));
+                new AuditLogEntity(accountId, apiKeyId, keyPairId, AuditAction.GENERATE, true, now));
     }
 
     public List<KeyPairEntity> list(UUID accountId) {
