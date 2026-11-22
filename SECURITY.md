@@ -23,7 +23,7 @@ own computer only (no TLS, no rate limiting yet). That is the default and it is 
 | Clickjacking, content sniffing, cached secrets, script injection | `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `Cache-Control: no-store` and a `default-src 'none'` content security policy on every response except the Swagger UI page | `SecurityHeadersFilter` |
 | Other web sites read API responses | No CORS permission is given to any origin | Spring default, checked in `ApiSecurityTest` |
 | API documentation exposed where it should not be | `API_DOCS_ENABLED=false` switches off Swagger UI and the OpenAPI document | `application.yml` |
-| Vulnerable or tampered dependencies | Versions are pinned, Dependabot watches Maven and GitHub Actions, the CI workflow has read-only permissions and its actions are pinned to exact commits | `pom.xml`, `.github/` |
+| Vulnerable or tampered dependencies | Versions are pinned, Dependabot watches Maven and GitHub Actions, the CI workflow has read-only permissions and its actions are pinned to exact commits. The Maven wrapper refuses a Maven download whose SHA-256 does not match the pinned value | `pom.xml`, `.github/`, `maven-wrapper.properties` |
 | A stolen database exposes private keys | Every private key is encrypted with AES-256-GCM under `MASTER_KEY`, which is never stored in the database or the repository. The key pair id and account id are bound into the encryption, so a ciphertext copied to another row or account does not decrypt | `PrivateKeyEncryptor`, `EncryptionConfig` |
 | Private keys leak through the API or the logs | Responses carry only the id, algorithm, status, public key and time. Failures are logged by type only | `KeyPairResponse`, `KeyService` |
 | Anyone on the computer uses the API | Every path except `/api/v1/health` and the API docs needs a valid key in the `X-API-Key` header. Missing, malformed, unknown, revoked or duplicated keys all get the same 401 `{"error":"unauthorized"}`. A key in the URL is ignored | `ApiKeyAuthFilter`, `ApiKeyService` |
@@ -36,6 +36,7 @@ own computer only (no TLS, no rate limiting yet). That is the default and it is 
 
 `mvn verify` runs these on every push (GitHub Actions) and locally:
 
+- `EncryptionConfigTest` checks that the backend does not start without a valid `MASTER_KEY` and never prints the value.
 - `MlKem1024KnownAnswerTest` checks key generation, encapsulation and decapsulation against all 60 ML-KEM-1024
   test vectors in NIST's ACVP-Server repository (FIPS 203), including implicit rejection of modified
   ciphertexts. The shared secret is the FIPS 203 output K itself: Bouncy Castle's default extra key
@@ -138,3 +139,5 @@ Done for encapsulation and decapsulation in task 3.4. Keep these true, and follo
 
 Please do not open a public issue for a security problem. Use "Report a vulnerability" on the repository's
 Security tab if it is available, or tell the team directly.
+
+The key-handling security review (KAN-22) and its evidence are in [docs/security-review.md](docs/security-review.md).
