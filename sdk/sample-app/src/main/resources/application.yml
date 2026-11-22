@@ -1,0 +1,14 @@
+# The two settings the SDK needs. The API key comes from the environment only, never from this file.
+quantumlock:
+  api-url: ${QUANTUMLOCK_API_URL:http://127.0.0.1:8080}
+  api-key: ${QUANTUMLOCK_API_KEY:}
+
+spring:
+  main:
+    banner-mode: off
+    web-application-type: none
+
+logging:
+  level:
+    root: warn
+    com.quantumlock.sample: info

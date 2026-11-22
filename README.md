@@ -13,7 +13,7 @@ Capstone Prototype (INFO34049), group 269_09.
 | `database/` | PostgreSQL schema and sample data | Data & Security | KAN-12 (2.2) |
 | `dashboard/` | React dashboard | Frontend / Dashboard | KAN-13 (2.3) |
 | `e2e/` | End-to-end test on a fresh setup | Testing | KAN-24 (6.3) |
-| `sdk/` (later) | Java/Spring SDK | Backend / API | KAN-21 (5.1) |
+| `sdk/` | Java client, Spring Boot starter and sample app ([sdk/README.md](sdk/README.md)) | Backend / API | KAN-21 (5.1) |
 
 ## Prerequisites
 
@@ -125,6 +125,8 @@ Tests use an in-memory H2 database, so PostgreSQL does not need to be running. T
   ciphertexts, malformed keys and forged signatures (`PostQuantumMisuseTest`)
 
 GitHub Actions runs the same build on every push (`.github/workflows/backend-ci.yml`).
+
+The Java SDK in `sdk/` has its own tests and CI. See [sdk/README.md](sdk/README.md#tests).
 
 ### End-to-end test (fresh setup)
 
