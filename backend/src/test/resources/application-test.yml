@@ -1,8 +1,19 @@
 # Settings for the "test" profile (@ActiveProfiles("test")). They are applied on top of the real
-# application.yml, so tests exercise the same configuration the app runs with. Only the database
-# is replaced: an in-memory H2 database in PostgreSQL mode, so tests need no PostgreSQL and no password.
+# application.yml, so tests exercise the same configuration the app runs with. Only these are replaced:
 spring:
   datasource:
-    url: jdbc:h2:mem:quantumlock;MODE=PostgreSQL;DB_CLOSE_DELAY=-1
+    # An in-memory H2 database in PostgreSQL mode, so tests need no PostgreSQL and no password.
+    # The random part gives every test context its own empty database.
+    url: jdbc:h2:mem:quantumlock-${random.uuid};MODE=PostgreSQL;DB_CLOSE_DELAY=-1
     username: sa
     password: ""
+  sql:
+    init:
+      # Build that database from the same scripts as the real one (paths are relative to backend/).
+      mode: always
+      schema-locations: file:../database/schema.sql
+      data-locations: file:../database/seed.sql
+
+quantumlock:
+  # A fixed, well-known value (the bytes 0 to 31) used only by the tests. Never use it for real keys.
+  master-key: AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=  # pragma: allowlist secret (public test value)

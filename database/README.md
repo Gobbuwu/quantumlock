@@ -1,11 +1,13 @@
-# Database (task 2.2, KAN-12, Data & Security)
+# Database (task 2.2, KAN-12)
 
-Put the PostgreSQL scripts here:
+- `schema.sql`: the accounts, api_keys, key_pairs and audit_logs tables from the RRD ER diagram.
+  The header of the file lists where it differs from the diagram and why.
+- `seed.sql`: demo data (two made-up teams). Key pairs are created through the API instead, because their
+  private keys must be encrypted with your own `MASTER_KEY`.
 
-- `schema.sql`: the accounts, api_keys, key_pairs and audit_logs tables from the RRD ER diagram
-- `seed.sql`: sample data for testing and the demo
+Both scripts are tested on PostgreSQL 16, and the backend tests build their H2 database from the same two files.
 
-Run them against the local `quantumlock` database created in the main README, for example:
+Run them once against the local `quantumlock` database created in the main README, for example:
 
 ```
 psql -h localhost -U quantumlock -d quantumlock -f database/schema.sql
@@ -13,6 +15,7 @@ psql -h localhost -U quantumlock -d quantumlock -f database/seed.sql
 ```
 
 The backend does not create tables itself (`spring.jpa.hibernate.ddl-auto: none`), so these scripts are the single source of the schema.
+To start over, drop and recreate the database, then run both scripts again.
 
 Security rules for these scripts (details in [SECURITY.md](../SECURITY.md)):
 

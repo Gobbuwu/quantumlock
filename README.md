@@ -32,17 +32,33 @@ CREATE USER quantumlock WITH PASSWORD '<your password>';
 CREATE DATABASE quantumlock OWNER quantumlock;
 ```
 
-## 2. Tell the backend your password (once)
+Then create the tables and load the demo data, from the repository folder:
 
-Copy `backend/.env.example` to `backend/.env` and set the same password there:
+```bash
+psql -h localhost -U quantumlock -d quantumlock -f database/schema.sql
+psql -h localhost -U quantumlock -d quantumlock -f database/seed.sql
+```
+
+## 2. Set the password and the master key (once)
+
+Copy `backend/.env.example` to `backend/.env` and fill in two values:
 
 ```
 DB_PASSWORD=<your password>
+MASTER_KEY=<32 random bytes, Base64>
 ```
 
-`backend/.env` is ignored by git, so the password stays on your computer. There is no default password:
-without `DB_PASSWORD` the backend stops at startup with the message `Could not resolve placeholder 'DB_PASSWORD'`.
-Setting a `DB_PASSWORD` environment variable works too.
+`MASTER_KEY` encrypts every private key the backend stores. Create it on your own computer with one of these
+commands and paste the output:
+
+- Windows PowerShell: `$b = New-Object byte[] 32; [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($b); [Convert]::ToBase64String($b)`
+- macOS or Linux: `openssl rand -base64 32`
+
+Keep a copy somewhere safe: if the master key is lost, the stored private keys can no longer be used.
+
+`backend/.env` is ignored by git, so both values stay on your computer. Neither has a default: without them the
+backend stops at startup with a message such as `Could not resolve placeholder 'MASTER_KEY'`.
+Environment variables with the same names work too.
 
 ## 3. Run the backend
 
@@ -54,7 +70,11 @@ cd backend
 Then open:
 
 - Health check: http://localhost:8080/api/v1/health should return `"status": "UP"`, `"database": "UP"` and `"cryptoProvider": "UP"`
-- API docs (Swagger UI): http://localhost:8080/swagger-ui.html
+- API docs (Swagger UI): http://localhost:8080/swagger-ui.html, where you can try the key endpoints:
+  - `POST /api/v1/keys/generate` with `{"algorithm": "ML-KEM-1024"}` or `{"algorithm": "ML-DSA-65"}`
+  - `GET /api/v1/keys` and `GET /api/v1/keys/{keyPairId}`
+
+Until API-key login exists (task 3.3), every request acts for the demo team from `database/seed.sql`.
 
 The backend listens on this computer only (`127.0.0.1`) and answers only to the host names `localhost` and
 `127.0.0.1`. That is on purpose, see [SECURITY.md](SECURITY.md). Other settings are listed in `backend/.env.example`.
@@ -72,6 +92,9 @@ the output to `test-result.txt`.
 Tests use an in-memory H2 database, so PostgreSQL does not need to be running. They cover:
 
 - the health endpoint and the Swagger docs (`HealthControllerTest`, `ApiDocsDisabledTest`)
+- key generation through the API, including that the stored private key is encrypted, still works after
+  decryption and is never returned, and that one team cannot see another team's keys (`KeyApiTest`)
+- the private-key encryption: tampering, a moved ciphertext and a wrong master key are all detected (`PrivateKeyEncryptorTest`)
 - attacks over real HTTP against the running application: forged Host header, oversized body, TRACE,
   path tricks, information leaks (`ApiSecurityTest`)
 - the decisions inside the security filters (`SecurityFiltersTest`) and the secure defaults in `application.yml` (`SecureDefaultsTest`)
