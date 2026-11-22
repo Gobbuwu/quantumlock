@@ -13,8 +13,11 @@ import java.net.InetAddress;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.util.Locale;
+import java.util.UUID;
 
+import com.quantumlock.auth.ApiKeyService;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.test.context.ActiveProfiles;
@@ -30,6 +33,14 @@ class ApiSecurityTest {
 
     @LocalServerPort
     private int port;
+
+    @Autowired
+    private ApiKeyService apiKeys;
+
+    /** A valid key of the demo team, for tests that must get past the API-key check. */
+    private String demoKey() {
+        return apiKeys.issue(UUID.fromString("5f1c3a9e-7b2d-4e8f-9a6c-1d0e2b3c4a51"), "test").key();
+    }
 
     @Test
     void healthResponseCarriesSecurityHeaders() throws IOException {
@@ -106,7 +117,7 @@ class ApiSecurityTest {
 
     @Test
     void unknownPathGives404WithoutInternalDetails() throws IOException {
-        String response = send(get("/api/v1/does-not-exist", "localhost"));
+        String response = send(get("/api/v1/does-not-exist", "localhost", demoKey()));
 
         assertEquals(404, statusOf(response));
         String body = bodyOf(response);
@@ -122,8 +133,11 @@ class ApiSecurityTest {
         String[] paths = {"/actuator", "/actuator/health", "/actuator/env", "/actuator/heapdump", "/h2-console",
                 "/.env", "/backend/.env", "/application.yml", "/.git/config"};
 
+        String key = demoKey();
         for (String path : paths) {
-            assertEquals(404, statusOf(send(get(path, "localhost"))), path);
+            // Without a key the API-key check refuses first; with one, the path simply does not exist.
+            assertEquals(401, statusOf(send(get(path, "localhost"))), path);
+            assertEquals(404, statusOf(send(get(path, "localhost", key))), path);
         }
     }
 
@@ -155,6 +169,14 @@ class ApiSecurityTest {
     private static byte[] get(String path, String host) {
         String request = "GET " + path + " HTTP/1.1\r\n"
                 + "Host: " + host + "\r\n"
+                + "Connection: close\r\n\r\n";
+        return request.getBytes(StandardCharsets.ISO_8859_1);
+    }
+
+    private static byte[] get(String path, String host, String apiKey) {
+        String request = "GET " + path + " HTTP/1.1\r\n"
+                + "Host: " + host + "\r\n"
+                + "X-API-Key: " + apiKey + "\r\n"
                 + "Connection: close\r\n\r\n";
         return request.getBytes(StandardCharsets.ISO_8859_1);
     }

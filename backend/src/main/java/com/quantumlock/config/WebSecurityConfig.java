@@ -1,6 +1,8 @@
 package com.quantumlock.config;
 
+import com.quantumlock.auth.ApiKeyService;
 import com.quantumlock.security.AllowedHostsFilter;
+import com.quantumlock.security.ApiKeyAuthFilter;
 import com.quantumlock.security.RequestSizeLimitFilter;
 import com.quantumlock.security.SecurityHeadersFilter;
 import jakarta.servlet.DispatcherType;
@@ -12,7 +14,7 @@ import org.springframework.core.Ordered;
 
 /**
  * Registers the security filters. They run before any controller, in this order:
- * security headers, then the Host allow list, then the request size limit.
+ * security headers, then the Host allow list, then the request size limit, then the API-key check.
  * The limits come from application.yml (quantumlock.security.*).
  */
 @Configuration
@@ -43,6 +45,14 @@ public class WebSecurityConfig {
         FilterRegistrationBean<RequestSizeLimitFilter> registration =
                 new FilterRegistrationBean<>(new RequestSizeLimitFilter(maxRequestBytes));
         registration.setOrder(Ordered.HIGHEST_PRECEDENCE + 30);
+        return registration;
+    }
+
+    @Bean
+    public FilterRegistrationBean<ApiKeyAuthFilter> apiKeyAuthFilter(ApiKeyService apiKeys) {
+        FilterRegistrationBean<ApiKeyAuthFilter> registration =
+                new FilterRegistrationBean<>(new ApiKeyAuthFilter(apiKeys));
+        registration.setOrder(Ordered.HIGHEST_PRECEDENCE + 40);
         return registration;
     }
 }
