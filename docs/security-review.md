@@ -1,6 +1,6 @@
 # Key-handling security review (KAN-22)
 
-Reviewed on Nov 22, 2026 against `main` at commit 4c08097. Written with the help of Claude AI.
+Reviewed on Nov 22, 2026 against `main` at commit 017a5f4 (numbered 4c08097 before the history cleanup of Nov 22, which changed only author addresses). Written with the help of Claude AI.
 
 **Scope (from the Jira task):** private keys are never returned or logged in plaintext, API keys are stored only
 as hashes and no secret is in the repository. The review also covers shared secrets, the configuration promised in
@@ -60,7 +60,7 @@ the API docs (`ApiDocsDisabledTest`). All pass. The application has no Actuator 
 | The API key is kept in memory, or in sessionStorage only if the user opts in | Pass | `dashboard/src/api/apiKey.js`. Tested in `apiKey.test.js`, `ApiKeyEntry.test.jsx` |
 | Never in localStorage, a cookie, the URL or the source | Pass | No use of `localStorage`, `document.cookie` or URL parameters in `dashboard/src` |
 | No raw HTML injection | Pass | No `dangerouslySetInnerHTML` or `eval` |
-| Content security policy | Recommendation (**R1**) | The dashboard has no CSP. It runs only on 127.0.0.1 in development, where Vite needs inline scripts. Add a CSP when a production build is served |
+| Content security policy | Fixed (**R1**) | At review time the dashboard had no CSP. The production build now has one (`dashboard/vite.config.js`), and the end-to-end test runs against that build |
 
 ## 6. Dependencies
 
@@ -77,4 +77,4 @@ the API docs (`ApiDocsDisabledTest`). All pass. The application has no Actuator 
 | G1 | `MASTER_KEY` startup checks have no test | New `EncryptionConfigTest` (8 tests): a missing key stops the application, and an empty, blank, non-Base64, 16-byte or 36-byte key is refused with an error that never contains the value. A valid key works | Passes. When the error message is changed to include the value, the test fails |
 | G2 | Maven is downloaded with no checksum | `distributionSha256Sum` added to `maven-wrapper.properties`. Its value is the SHA-256 of the Maven 3.10.1 zip whose SHA-512 matches both Maven Central and archive.apache.org | With the right value the wrapper downloads and runs Maven 3.10.1. With one wrong character it stops with "Failed to validate Maven distribution SHA-256" and exit code 1. Checked with `mvnw` on Linux. `mvnw.cmd` (Windows) runs the same check (its lines 138 to 145) but was not run here: unverified on Windows |
 | G3 | Stale and partly inconsistent Dependabot PRs | The 8 updates applied together on current `main`: Maven 3.10.1, `actions/checkout` 7.0.1 in both workflows, `actions/setup-java` 6.3.0 (both still pinned to the commit of their release tag, checked with `git ls-remote`), and the 5 dashboard test tools | 176 backend tests and 29 dashboard tests pass, the dashboard build works and `npm audit` finds 0 vulnerabilities |
-| R1 | No dashboard CSP | Deferred until a production build exists | Open |
+| R1 | No dashboard CSP | Fixed in a later change: a strict CSP and security headers on the production build (`npm run preview`). The end-to-end test now uses that build, fails on any CSP violation and checks that an injected inline script is blocked | Fixed. With `font-src` removed from the policy, the test fails with one violation per font file |

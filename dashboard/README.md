@@ -30,6 +30,7 @@ npm run dev:mock
 ```bash
 npm test          # Vitest: the API client, the key list and the generate form
 npm run build     # production files in dist/
+npm run preview   # serves dist/ on http://127.0.0.1:4173 with the content security policy
 ```
 
 GitHub Actions runs both on every pull request (`.github/workflows/dashboard-ci.yml`).
@@ -47,5 +48,10 @@ computer. All calls go through `src/api/client.js`. `src/api/mock.js` returns th
   is closed", it is also kept in the tab's `sessionStorage`, which the browser deletes when the tab closes. It is
   never put in `localStorage`, a cookie, the URL, the source code or a committed file.
 - The key travels in the `X-API-Key` header, through Vite's proxy on this computer only.
+- The production build (`npm run build`, then `npm run preview`) is served with a strict content security policy
+  and other security headers, set in `vite.config.js`: script, styles, fonts, the icon and the `/api` calls may
+  only come from the dashboard's own address, no inline script runs and no other site may frame the page. The
+  end-to-end test runs against this build and fails on any policy violation. `npm run dev` has no policy, because
+  Vite's development server needs inline scripts. To serve `dist/` with another web server, send the same headers.
 - `.npmrc` sets `legacy-peer-deps=true` because npm 10 crashes on Vitest 5's optional peer dependencies.
   Every peer this project needs is listed in `package.json`.

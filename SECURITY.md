@@ -21,6 +21,7 @@ own computer only (no TLS, no rate limiting yet). That is the default and it is 
 | Stalled connections hold server threads | Silent connections are closed after 10 seconds | `server.tomcat.connection-timeout` |
 | Error messages reveal internals | Error responses contain a status code only: no exception, message, stack trace or requested path. The health check answers UP or DOWN, never a version | `spring.web.error.*`, `HealthController` |
 | Clickjacking, content sniffing, cached secrets, script injection | `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `Cache-Control: no-store` and a `default-src 'none'` content security policy on every response except the Swagger UI page | `SecurityHeadersFilter` |
+| Script injection or framing in the dashboard | The production build is served with a content security policy that allows script, styles, fonts, images and API calls from the dashboard's own address only, no inline script and no framing, plus `nosniff`, `DENY` framing and `no-referrer`. The end-to-end test fails on any violation and checks that an injected inline script does not run | `dashboard/vite.config.js`, `dashboard/e2e/` |
 | Other web sites read API responses | No CORS permission is given to any origin | Spring default, checked in `ApiSecurityTest` |
 | API documentation exposed where it should not be | `API_DOCS_ENABLED=false` switches off Swagger UI and the OpenAPI document | `application.yml` |
 | Vulnerable or tampered dependencies | Versions are pinned, Dependabot watches Maven and GitHub Actions, the CI workflow has read-only permissions and its actions are pinned to exact commits. The Maven wrapper refuses a Maven download whose SHA-256 does not match the pinned value | `pom.xml`, `.github/`, `maven-wrapper.properties` |
@@ -132,6 +133,9 @@ Done for encapsulation and decapsulation in task 3.4. Keep these true, and follo
 ### Dashboard (task 2.3 and later)
 
 - Allow exactly the dashboard's origin in CORS. Never `*`.
+- Keep the content security policy of the production build (`vite.config.js`) free of `'unsafe-inline'`,
+  `'unsafe-eval'` and other sites. If a new feature needs another source, add only that source. The end-to-end
+  test fails on any violation, so a change that breaks the policy is found at once.
 - No API key in the React source or in any committed file. Done in task 4.2: the user types the key in, it is kept
   in memory (or, if they choose, in `sessionStorage` until the tab closes) and sent only in the `X-API-Key` header.
 
