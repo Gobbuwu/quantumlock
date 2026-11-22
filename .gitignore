@@ -31,4 +31,6 @@ application-local.yml
 # React dashboard (task 2.3)
 node_modules/
 dist/
+# Playwright run status from the end-to-end test (e2e/run.sh)
+test-results/
 build/
