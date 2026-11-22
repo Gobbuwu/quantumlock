@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -32,8 +33,11 @@ import org.bouncycastle.jcajce.spec.KEMGenerateSpec;
 import org.bouncycastle.jcajce.spec.MLKEMParameterSpec;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -258,6 +262,58 @@ class KeyExchangeApiTest {
         assertEquals(null, KeyExchangeService.decodeCiphertext(good.substring(0, 2090) + "B="));
         assertEquals(null, KeyExchangeService.decodeCiphertext(good.substring(0, 2091) + "A"));
         assertEquals(null, KeyExchangeService.decodeCiphertext("A".repeat(2092)));
+    }
+
+    @Test
+    void aDamagedStoredPrivateKeyGivesAFixedErrorAndIsAudited() throws Exception {
+        String id = generate(demoKey, "ML-KEM-1024");
+        String ciphertext = JsonPath.read(encapsulate(demoKey, id), "$.ciphertext");
+        byte[] stored = jdbc.queryForObject("SELECT private_key_ciphertext FROM key_pairs WHERE key_pair_id = ?",
+                byte[].class, UUID.fromString(id));
+        stored[stored.length - 1] ^= 1;
+        jdbc.update("UPDATE key_pairs SET private_key_ciphertext = ? WHERE key_pair_id = ?", stored,
+                UUID.fromString(id));
+
+        mockMvc.perform(post("/api/v1/keys/" + id + "/decapsulate").header(ApiKeys.HEADER, demoKey)
+                        .contentType(MediaType.APPLICATION_JSON).content(json(ciphertext)))
+                .andExpect(status().isInternalServerError())
+                .andExpect(content().json("{\"error\":\"operation_failed\"}", true));
+        assertEquals(List.of("decapsulate:failure", "encapsulate:success", "generate:success"),
+                auditLogs.findByKeyPairId(UUID.fromString(id)).stream()
+                        .map(e -> e.getAction() + ":" + e.getStatus()).sorted().toList());
+    }
+
+    @Test
+    void aCallForAnUnknownKeyIsAuditedWithoutAKeyId() throws Exception {
+        String count = "SELECT COUNT(*) FROM audit_logs WHERE account_id = ? AND api_key_id = ?"
+                + " AND key_pair_id IS NULL AND action = 'encapsulate' AND status = 'failure'";
+
+        mockMvc.perform(post("/api/v1/keys/" + UUID.randomUUID() + "/encapsulate").header(ApiKeys.HEADER, demoKey))
+                .andExpect(status().isNotFound());
+
+        assertEquals(1, jdbc.queryForObject(count, Integer.class, DEMO_ACCOUNT, demoKeyId));
+    }
+
+    @Test
+    @ExtendWith(OutputCaptureExtension.class)
+    void secretsAndKeysNeverReachTheLogs(CapturedOutput output) throws Exception {
+        String id = generate(demoKey, "ML-KEM-1024");
+        String encapsulated = encapsulate(demoKey, id);
+        String ciphertext = JsonPath.read(encapsulated, "$.ciphertext");
+        String secret = JsonPath.read(encapsulated, "$.sharedSecret");
+        decapsulate(demoKey, id, ciphertext);
+        // A failing call too, so the error log line is checked as well.
+        jdbc.update("UPDATE key_pairs SET private_key_ciphertext = ? WHERE key_pair_id = ?", new byte[40],
+                UUID.fromString(id));
+        mockMvc.perform(post("/api/v1/keys/" + id + "/decapsulate").header(ApiKeys.HEADER, demoKey)
+                        .contentType(MediaType.APPLICATION_JSON).content(json(ciphertext)))
+                .andExpect(status().isInternalServerError());
+
+        String logged = output.getAll();
+        assertTrue(logged.contains("decapsulate failed for key pair " + id), "the failure is logged");
+        for (String forbidden : new String[] {secret, ciphertext.substring(0, 40), demoKey, demoKey.substring(8)}) {
+            assertFalse(logged.contains(forbidden), "a secret, ciphertext or API key reached the log");
+        }
     }
 
     // ---- helpers ----
