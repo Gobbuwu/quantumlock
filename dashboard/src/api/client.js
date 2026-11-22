@@ -1,6 +1,7 @@
 /**
  * Talks to the QuantumLock backend. The dashboard calls /api/v1/... on its own address and
- * Vite forwards those calls to the backend (see vite.config.js).
+ * Vite forwards those calls to the backend (see vite.config.js). Every call carries the API key
+ * in the X-API-Key header, never in the URL.
  */
 
 export class ApiError extends Error {
@@ -12,10 +13,12 @@ export class ApiError extends Error {
   }
 }
 
-export function createApi(fetchImpl = (...args) => fetch(...args), baseUrl = '/api/v1') {
+export function createApi(fetchImpl = (...args) => fetch(...args), baseUrl = '/api/v1', getApiKey = () => null) {
   async function request(path, { method = 'GET', body } = {}) {
     const headers = { Accept: 'application/json' }
     if (body !== undefined) headers['Content-Type'] = 'application/json'
+    const apiKey = getApiKey()
+    if (apiKey) headers['X-API-Key'] = apiKey
 
     let response
     try {
@@ -58,8 +61,8 @@ export function describeError(error) {
   switch (error?.code) {
     case 'api_unreachable':
       return 'The QuantumLock API is not answering on localhost:8080. Start the backend (see the README), then try again.'
-    case 'demo_account_missing':
-      return 'The database has no demo team yet. Run database/seed.sql, then try again.'
+    case 'unauthorized':
+      return 'The API did not accept this API key. Check that you copied all of it, or issue a new one (see the README).'
     case 'unsupported_algorithm':
       return 'That algorithm is not supported. Choose ML-KEM-1024 or ML-DSA-65.'
     case 'key_generation_failed':

@@ -46,8 +46,34 @@ describe('createApi', () => {
   })
 
   it('keeps a 5xx error code from the API itself', async () => {
-    await expect(createApi(respond(503, { error: 'demo_account_missing' })).listKeys()).rejects.toMatchObject({
-      code: 'demo_account_missing',
+    await expect(createApi(respond(503, { error: 'service_unavailable' })).listKeys()).rejects.toMatchObject({
+      code: 'service_unavailable',
+    })
+  })
+
+  it('sends the API key in the X-API-Key header and never in the URL', async () => {
+    const key = 'ql_test_' + 'A'.repeat(43)
+    const fetchImpl = respond(200, [])
+
+    await createApi(fetchImpl, '/api/v1', () => key).listKeys()
+
+    const [url, options] = fetchImpl.mock.calls[0]
+    expect(options.headers['X-API-Key']).toBe(key)
+    expect(url).not.toContain(key)
+  })
+
+  it('sends no key header when there is no key', async () => {
+    const fetchImpl = respond(200, [])
+
+    await createApi(fetchImpl).listKeys()
+
+    expect(fetchImpl.mock.calls[0][1].headers).not.toHaveProperty('X-API-Key')
+  })
+
+  it('reports a refused key as unauthorized', async () => {
+    await expect(createApi(respond(401, { error: 'unauthorized' })).listKeys()).rejects.toMatchObject({
+      status: 401,
+      code: 'unauthorized',
     })
   })
 })
@@ -55,7 +81,7 @@ describe('createApi', () => {
 describe('describeError', () => {
   it('tells the user what to do for each known error', () => {
     expect(describeError({ code: 'api_unreachable' })).toMatch(/Start the backend/)
-    expect(describeError({ code: 'demo_account_missing' })).toMatch(/seed\.sql/)
+    expect(describeError({ code: 'unauthorized' })).toMatch(/did not accept this API key/)
     expect(describeError({ code: 'key_generation_failed' })).toMatch(/nothing was saved/)
     expect(describeError({ code: 'something_new' })).toMatch(/something_new/)
   })

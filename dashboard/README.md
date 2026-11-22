@@ -1,4 +1,4 @@
-# Dashboard (tasks 2.3 and 4.1)
+# Dashboard (tasks 2.3, 4.1 and 4.2)
 
 React page where a team generates post-quantum key pairs and sees its keys. It follows the Key Management
 wireframe in the RRD. Built with Vite, React 19 and Vitest.
@@ -14,6 +14,10 @@ npm run dev
 
 Open http://localhost:5173. The page calls the backend through Vite, so start the backend first
 (see the main README). If the backend is not running, the page says so and offers to try again.
+
+The page first asks for an API key. Issue one with the backend's `issue-api-key` command (main README, section 3)
+and paste it in. The page checks it with the API before showing any keys. If the key stops working (for example
+because it was revoked), the page asks for a key again. **Forget API key** in the header removes it.
 
 To work on the page without the backend, use made-up data instead:
 
@@ -39,6 +43,9 @@ computer. All calls go through `src/api/client.js`. `src/api/mock.js` returns th
 ## Security notes
 
 - The page never receives a private key: the API returns only the key ID, algorithm, status, public key and time.
-- Never put an API key in the source code or in a committed file. Use a local `.env.local` file, which git ignores.
+- The API key is typed into a password field and kept in memory only. If you tick "Remember until this browser tab
+  is closed", it is also kept in the tab's `sessionStorage`, which the browser deletes when the tab closes. It is
+  never put in `localStorage`, a cookie, the URL, the source code or a committed file.
+- The key travels in the `X-API-Key` header, through Vite's proxy on this computer only.
 - `.npmrc` sets `legacy-peer-deps=true` because npm 10 crashes on Vitest 5's optional peer dependencies.
   Every peer this project needs is listed in `package.json`.

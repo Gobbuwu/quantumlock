@@ -3,7 +3,7 @@ import { describeError } from '../api/client.js'
 import { ALGORITHMS } from './algorithms.js'
 import { shortId } from './format.js'
 
-export default function GenerateKeyForm({ api, onGenerated }) {
+export default function GenerateKeyForm({ api, onGenerated, onUnauthorized }) {
   const [algorithm, setAlgorithm] = useState(ALGORITHMS[0].name)
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState(null) // { ok: true, key } | { ok: false, message }
@@ -17,6 +17,10 @@ export default function GenerateKeyForm({ api, onGenerated }) {
       onGenerated(key)
       setResult({ ok: true, key })
     } catch (error) {
+      if (error?.code === 'unauthorized' && onUnauthorized) {
+        onUnauthorized()
+        return
+      }
       setResult({ ok: false, message: describeError(error) })
     } finally {
       setBusy(false)
