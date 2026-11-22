@@ -1,0 +1,40 @@
+# Builds the Java SDK (client, Spring Boot starter and sample app) and runs its tests on every pull request
+# and on every push to main that touches it. The tests use a stand-in API, so no backend or database is needed.
+name: SDK CI
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "sdk/**"
+      - ".github/workflows/sdk-ci.yml"
+  pull_request:
+    paths:
+      - "sdk/**"
+      - ".github/workflows/sdk-ci.yml"
+  workflow_dispatch:
+
+# Least privilege: this workflow only needs to read the code.
+permissions:
+  contents: read
+
+jobs:
+  sdk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: sdk
+    steps:
+      # Actions are pinned to an exact commit so a changed tag cannot change what runs here.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+      - name: Build and test
+        run: ./mvnw -B verify

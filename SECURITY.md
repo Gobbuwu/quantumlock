@@ -30,6 +30,7 @@ own computer only (no TLS, no rate limiting yet). That is the default and it is 
 | A stolen database exposes API keys | Keys are 32 bytes from `SecureRandom`, shown once and stored only as their SHA-256 hash, compared with `MessageDigest.isEqual`. A revoked key stops working on the next request | `ApiKeys`, `api_keys.key_hash` |
 | Bad input crashes or probes the key exchange | Ciphertexts are decoded as strict Base64 and must be exactly 1568 bytes before Bouncy Castle sees them. Keys are loaded with the `ML-KEM-1024` key factory only. Every malformed input gets the same 400 `invalid_request`; a tampered but well-formed ciphertext gets a normal answer with a different secret (FIPS 203 implicit rejection). Library failures become a fixed 500 `operation_failed`, logged by type only. Every call is audited | `KeyExchangeService` |
 | One team reads another team's keys | Every key lookup includes the account id. Another team's key, an unknown id and a malformed id all get the same 404 | `KeyPairRepository`, `ApiExceptionHandler` |
+| An application using the SDK leaks its API key or a shared secret | The Java SDK sends the key in the `X-API-Key` header only, refuses plain `http://` except on the same computer, never follows redirects, times out every call and checks every answer strictly. The key and secrets never appear in `toString()`, exception messages or logs, and `SharedSecret` can be wiped | `sdk/quantumlock-client` |
 | Secrets or keys committed by accident | `.env` files and key files (`*.pem`, `*.key`, `*.p12`, `*.jks`) are ignored by git | `.gitignore` |
 
 ## How it is checked
@@ -55,6 +56,8 @@ own computer only (no TLS, no rate limiting yet). That is the default and it is 
   or switches error details back on.
 - `PostQuantumMisuseTest` feeds Bouncy Castle tampered ciphertexts, malformed and swapped keys, corrupted
   stored private keys and forged signatures, and pins down how it reacts.
+- The SDK's own tests (`cd sdk && mvn verify`, GitHub Actions `sdk-ci.yml`) check the header, the refused URLs
+  and redirects, every error code, strict response checks and that no key or secret shows up in any message.
 
 ## Known limits
 
@@ -128,6 +131,17 @@ Done for encapsulation and decapsulation in task 3.4. Keep these true, and follo
   rejection). Keep it that way: do not add a "ciphertext was invalid" answer, which would tell an attacker
   something the algorithm is designed to hide.
 - Create one `SecureRandom` and let it seed itself. Never seed it with fixed or time-based values.
+
+### SDK (task 5.1 and later)
+
+Done in task 5.1. Keep these true when the SDK grows:
+
+- Send the API key in the `X-API-Key` header only. Never log it, print it or put it in an exception message,
+  and never repeat a refused setting in an error.
+- Refuse plain `http://` to any other computer, and never follow redirects.
+- Check every answer: exact lengths (32-byte secret, 1568-byte ciphertext), the key pair id asked for, and a
+  size limit. Never copy the response body or a parser message into an exception.
+- Return secrets in an object that hides itself and can be wiped, never as a plain `byte[]` or `String`.
 
 ### Dashboard (task 2.3 and later)
 
