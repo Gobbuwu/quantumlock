@@ -1,0 +1,75 @@
+# End-to-end test on a fresh setup (KAN-24): an empty PostgreSQL 16, the backend, the dashboard and a real
+# browser, started from nothing on every run. See e2e/run.sh.
+name: End-to-end
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "backend/**"
+      - "dashboard/**"
+      - "database/**"
+      - "e2e/**"
+      - ".github/workflows/e2e.yml"
+  pull_request:
+    paths:
+      - "backend/**"
+      - "dashboard/**"
+      - "database/**"
+      - "e2e/**"
+      - ".github/workflows/e2e.yml"
+  workflow_dispatch:
+
+# Least privilege: this workflow only needs to read the code.
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      # Actions are pinned to an exact commit so a changed tag cannot change what runs here.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: dashboard/package-lock.json
+
+      # PostgreSQL 16.16, the version used for development, pinned to the image digest. The superuser password
+      # is random for this run and masked in the log. The server listens on this runner only.
+      - name: Start PostgreSQL
+        run: |
+          PGPASSWORD="$(openssl rand -hex 24)"
+          echo "::add-mask::$PGPASSWORD"
+          docker run -d --name postgres -e POSTGRES_PASSWORD="$PGPASSWORD" -p 127.0.0.1:5432:5432 \
+            postgres:16.16@sha256:3950ad7c3148ca2175ef1b6c36c9efbf78957ae8fbe8b3a5d7c35af50500382f
+          for _ in $(seq 60); do
+            docker exec postgres pg_isready -U postgres -q && break
+            sleep 1
+          done
+          docker exec postgres pg_isready -U postgres
+          {
+            echo "PGHOST=127.0.0.1"
+            echo "PGPORT=5432"
+            echo "PGUSER=postgres"
+            echo "PGPASSWORD=$PGPASSWORD"
+          } >> "$GITHUB_ENV"
+
+      - name: Install the dashboard and the test browser
+        working-directory: dashboard
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: End-to-end test
+        run: ./e2e/run.sh

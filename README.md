@@ -12,6 +12,7 @@ Capstone Prototype (INFO34049), group 269_09.
 | `backend/` | Spring Boot REST API | Backend / API | KAN-11 (2.1), KAN-15 (3.2), KAN-17 (3.4) |
 | `database/` | PostgreSQL schema and sample data | Data & Security | KAN-12 (2.2) |
 | `dashboard/` | React dashboard | Frontend / Dashboard | KAN-13 (2.3) |
+| `e2e/` | End-to-end test on a fresh setup | Testing | KAN-24 (6.3) |
 | `sdk/` (later) | Java/Spring SDK | Backend / API | KAN-21 (5.1) |
 
 ## Prerequisites
@@ -124,6 +125,24 @@ Tests use an in-memory H2 database, so PostgreSQL does not need to be running. T
   ciphertexts, malformed keys and forged signatures (`PostQuantumMisuseTest`)
 
 GitHub Actions runs the same build on every push (`.github/workflows/backend-ci.yml`).
+
+### End-to-end test (fresh setup)
+
+`e2e/run.sh` starts everything from nothing: a new database and user (both named `quantumlock_e2e`), the schema
+and demo data, the backend on port 18080, one API key and the dashboard on port 15173. A real browser (Playwright)
+then refuses a wrong key, generates an ML-KEM-1024 and an ML-DSA-65 key pair, sees both in the list, and checks
+that the API key is kept only in memory unless "Remember" is ticked. Last, the script checks in the database that
+both private keys are stored encrypted and that both "generate" audit entries exist. The database password,
+`MASTER_KEY` and API key are random for every run and never printed. The script refuses to run if a database or
+user named `quantumlock_e2e` already exists, and removes both at the end.
+
+GitHub Actions runs it on every pull request that touches the backend, dashboard or database
+(`.github/workflows/e2e.yml`). To run it yourself (macOS or Linux; not yet tried on Windows), with a PostgreSQL superuser:
+
+```bash
+cd dashboard && npm ci && npx playwright install chromium && cd ..
+PGHOST=localhost PGUSER=postgres PGPASSWORD=<postgres password> ./e2e/run.sh
+```
 
 ## Versions
 
