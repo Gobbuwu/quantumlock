@@ -41,7 +41,8 @@ Setup never overwrites anything: it stops if `backend/.env`, the database or the
 fails, it removes what it had created, so it can simply be run again.
 
 Start builds the backend and the dashboard when needed, starts both and prints the address. Open
-http://127.0.0.1:4173, paste the API key and generate a key pair. Press Ctrl+C to stop both. Both listen on this
+http://127.0.0.1:4173, paste the API key and generate a key pair. Press Ctrl+C to stop both. On Windows the
+window may then ask "Terminate batch job (Y/N)?": both answers are fine, the demo has already stopped. Both listen on this
 computer only, and the dashboard is the production build with its content security policy.
 
 `demo\remove.cmd` (or `demo/remove.sh`) deletes the database, its user and `backend/.env` again, after you type
