@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# End-to-end test of QuantumLock on a fresh setup (KAN-20, KAN-24).
+# End-to-end test of QuantumLock on a fresh setup (KAN-20, KAN-24, KAN-25).
 #
 # Builds everything from nothing: a new PostgreSQL database and user, the schema and demo data, the backend,
-# one API key and the dashboard. A real browser then uses the dashboard (dashboard/e2e/), and the database is
+# one API key and the dashboard. A real browser then uses the dashboard (dashboard/e2e/), the Java SDK's sample app
+# (sdk/sample-app) agrees on a shared secret through the API, and the database is
 # checked directly at the end.
 #
 # Needs: Java 21, Node 22 or later, psql, openssl, curl, and a PostgreSQL server reachable with a superuser
@@ -105,11 +106,45 @@ log "Browser test"
 (cd "$ROOT/dashboard" && E2E_API_KEY="$E2E_API_KEY" E2E_BASE_URL="http://127.0.0.1:$DASHBOARD_PORT" \
   npx playwright test --config e2e/playwright.config.js)
 
+log "SDK sample app (KAN-25)"
+# The Java SDK's sample app runs against the same backend, with the same API key: it generates an ML-KEM-1024 key pair,
+# encapsulates, decapsulates and exits with 0 only when both shared secrets match.
+(cd "$ROOT/sdk" && ./mvnw -B -q package -DskipTests)
+SAMPLE_JAR="$ROOT/sdk/sample-app/target/quantumlock-sample-app-0.1.0-SNAPSHOT.jar"
+run_sample() { # api key; prints the app's output, returns its exit code
+  (cd "$WORK" && QUANTUMLOCK_API_URL="http://127.0.0.1:$BACKEND_PORT" QUANTUMLOCK_API_KEY="$1" java -jar "$SAMPLE_JAR" 2>&1)
+}
+SAMPLE_STATUS=0
+SAMPLE_OUT="$(run_sample "$E2E_API_KEY")" || SAMPLE_STATUS=$?
+if grep -qF -- "$E2E_API_KEY" <<<"$SAMPLE_OUT"; then
+  echo "The sample app printed the API key" >&2
+  exit 1
+fi
+grep 'KeyExchangeDemo' <<<"$SAMPLE_OUT" || true
+if [ "$SAMPLE_STATUS" -ne 0 ] || ! grep -q 'Shared secrets match: true' <<<"$SAMPLE_OUT"; then
+  echo "The sample app failed (exit code $SAMPLE_STATUS)" >&2
+  exit 1
+fi
+SAMPLE_KEY_ID="$(grep -Eo 'Generated ML-KEM-1024 key pair [0-9a-f-]{36}' <<<"$SAMPLE_OUT" | grep -Eo '[0-9a-f-]{36}$' || true)"
+[ -n "$SAMPLE_KEY_ID" ] || { echo "The sample app did not report its key pair" >&2; exit 1; }
+
+# A well-formed key that was never issued must be refused, and the app must say so without showing the key.
+WRONG_KEY="ql_test_$(openssl rand -base64 32 | tr '+/' '-_' | tr -d '=\n' | cut -c1-43)"
+WRONG_STATUS=0
+WRONG_OUT="$(run_sample "$WRONG_KEY")" || WRONG_STATUS=$?
+if [ "$WRONG_STATUS" -ne 1 ] || ! grep -q 'QuantumLock API error 401 unauthorized' <<<"$WRONG_OUT" \
+    || grep -qF -- "$WRONG_KEY" <<<"$WRONG_OUT"; then
+  echo "A wrong API key was not refused as expected (exit code $WRONG_STATUS)" >&2
+  exit 1
+fi
+echo "A wrong API key is refused with 401 and exit code 1"
+
 log "Database check"
-# Expected after the browser test: one ML-KEM-1024 and one ML-DSA-65 key pair for the demo team, each private key
-# stored only encrypted (format version byte 1, and the PKCS#8 algorithm identifier of either algorithm nowhere in
-# the stored bytes), and one successful "generate" audit entry per key pair.
-RESULT="$(PGPASSWORD="$DB_PASSWORD" psql -X -tA -U "$APP_PGUSER" -v ON_ERROR_STOP=1 <<'SQL'
+# Expected after the browser test and the sample app: two ML-KEM-1024 key pairs and one ML-DSA-65 key pair for the demo
+# team, each private key stored only encrypted (format version byte 1, and the PKCS#8 algorithm identifier of either
+# algorithm nowhere in the stored bytes), one successful "generate" audit entry per key pair, and one successful
+# "encapsulate" and one "decapsulate" entry for the sample app's key pair.
+RESULT="$(PGPASSWORD="$DB_PASSWORD" psql -X -tA -U "$APP_PGUSER" -v ON_ERROR_STOP=1 -v sample="$SAMPLE_KEY_ID" <<'SQL'
 SELECT
   (SELECT count(*) FROM key_pairs),
   (SELECT string_agg(algorithm, ',' ORDER BY algorithm) FROM key_pairs),
@@ -118,13 +153,18 @@ SELECT
        AND position('\x0609608648016503040403'::bytea IN private_key_ciphertext) = 0
        AND position('\x0609608648016503040312'::bytea IN private_key_ciphertext) = 0),
   (SELECT count(*) FROM audit_logs a JOIN key_pairs k ON k.key_pair_id = a.key_pair_id
-     WHERE a.action = 'generate' AND a.status = 'success')
+     WHERE a.action = 'generate' AND a.status = 'success'),
+  (SELECT count(*) FROM audit_logs
+     WHERE key_pair_id = :'sample'::uuid AND action = 'encapsulate' AND status = 'success'),
+  (SELECT count(*) FROM audit_logs
+     WHERE key_pair_id = :'sample'::uuid AND action = 'decapsulate' AND status = 'success')
 SQL
 )"
-echo "key pairs | algorithms | stored encrypted | generate audit rows"
+EXPECTED="3|ML-DSA-65,ML-KEM-1024,ML-KEM-1024|3|3|1|1"
+echo "key pairs | algorithms | stored encrypted | generate audit rows | sample encapsulate | sample decapsulate"
 echo "$RESULT"
-if [ "$RESULT" != "2|ML-DSA-65,ML-KEM-1024|2|2" ]; then
-  echo "Database check failed. Expected 2|ML-DSA-65,ML-KEM-1024|2|2" >&2
+if [ "$RESULT" != "$EXPECTED" ]; then
+  echo "Database check failed. Expected $EXPECTED" >&2
   exit 1
 fi
 

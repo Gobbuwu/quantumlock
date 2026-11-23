@@ -132,14 +132,16 @@ The Java SDK in `sdk/` has its own tests and CI. See [sdk/README.md](sdk/README.
 
 `e2e/run.sh` starts everything from nothing: a new database and user (both named `quantumlock_e2e`), the schema
 and demo data, the backend on port 18080, one API key and the dashboard's production build (with its content security
-policy) on port 15173. A real browser (Playwright)
-then refuses a wrong key, generates an ML-KEM-1024 and an ML-DSA-65 key pair, sees both in the list, and checks
-that the API key is kept only in memory unless "Remember" is ticked. Any content security policy violation fails the test. Last, the script checks in the database that
-both private keys are stored encrypted and that both "generate" audit entries exist. The database password,
-`MASTER_KEY` and API key are random for every run and never printed. The script refuses to run if a database or
-user named `quantumlock_e2e` already exists, and removes both at the end.
+policy) on port 15173. A real browser (Playwright) then refuses a wrong key, generates an ML-KEM-1024 and an ML-DSA-65
+key pair, sees both in the list, and checks that the API key is kept only in memory unless "Remember" is ticked. Any
+content security policy violation fails the test. Next, the Java SDK's sample app generates a third key pair
+(ML-KEM-1024) and agrees on a shared secret through the API, and a wrong key must be refused with 401. Last, the script
+checks in the database that all three private keys are stored encrypted and that every generate, encapsulate and
+decapsulate call was audited. The database password, `MASTER_KEY` and API key are random for every run and never
+printed. The script refuses to run if a database or user named `quantumlock_e2e` already exists, and removes both
+at the end.
 
-GitHub Actions runs it on every pull request that touches the backend, dashboard or database
+GitHub Actions runs it on every pull request that touches the backend, dashboard, database or SDK
 (`.github/workflows/e2e.yml`). To run it yourself (macOS or Linux; not yet tried on Windows), with a PostgreSQL superuser:
 
 ```bash
