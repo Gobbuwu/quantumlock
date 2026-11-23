@@ -7,26 +7,16 @@ import java.security.PublicKey;
 import java.security.SecureRandom;
 import java.security.spec.PKCS8EncodedKeySpec;
 import java.security.spec.X509EncodedKeySpec;
-import java.time.Clock;
-import java.time.Instant;
-import java.time.temporal.ChronoUnit;
-import java.util.Base64;
 import java.util.UUID;
 
 import javax.crypto.KeyGenerator;
 
-import com.quantumlock.api.ApiException;
 import com.quantumlock.audit.AuditAction;
-import com.quantumlock.audit.AuditLogEntity;
-import com.quantumlock.audit.AuditLogRepository;
 import com.quantumlock.crypto.CryptoProviders;
 import com.quantumlock.crypto.PrivateKeyEncryptor;
 import org.bouncycastle.jcajce.SecretKeyWithEncapsulation;
 import org.bouncycastle.jcajce.spec.KEMExtractSpec;
 import org.bouncycastle.jcajce.spec.KEMGenerateSpec;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
 /**
@@ -51,23 +41,19 @@ public class KeyExchangeService {
     static final int SHARED_SECRET_BYTES = 32;
 
     private static final String KEY_FACTORY = "ML-KEM-1024";
-    private static final Logger log = LoggerFactory.getLogger(KeyExchangeService.class);
 
-    private final KeyPairRepository keyPairs;
+    private final KeyPairAccess access;
     private final PrivateKeyEncryptor encryptor;
-    private final AuditLogRepository auditLogs;
     private final SecureRandom random = new SecureRandom();
-    private final Clock clock = Clock.systemUTC();
 
     static {
         // In a static block so the static encapsulate and decapsulate helpers can rely on it too.
         CryptoProviders.register();
     }
 
-    public KeyExchangeService(KeyPairRepository keyPairs, PrivateKeyEncryptor encryptor, AuditLogRepository auditLogs) {
-        this.keyPairs = keyPairs;
+    KeyExchangeService(KeyPairAccess access, PrivateKeyEncryptor encryptor) {
+        this.access = access;
         this.encryptor = encryptor;
-        this.auditLogs = auditLogs;
     }
 
     /** A new shared secret and its ciphertext. Both arrays belong to the caller. */
@@ -80,13 +66,14 @@ public class KeyExchangeService {
     }
 
     public Encapsulation encapsulate(UUID accountId, UUID apiKeyId, UUID keyPairId) {
-        KeyPairEntity keyPair = usableKey(accountId, apiKeyId, keyPairId, AuditAction.ENCAPSULATE);
+        KeyPairEntity keyPair = access.usableKey(accountId, apiKeyId, keyPairId, Algorithm.ML_KEM_1024,
+                AuditAction.ENCAPSULATE);
         try {
             Encapsulation result = encapsulate(keyPair.getPublicKey(), random);
-            audit(accountId, apiKeyId, keyPairId, AuditAction.ENCAPSULATE, true);
+            access.audit(accountId, apiKeyId, keyPairId, AuditAction.ENCAPSULATE, true);
             return result;
         } catch (GeneralSecurityException | RuntimeException e) {
-            throw failed(accountId, apiKeyId, keyPairId, AuditAction.ENCAPSULATE, e);
+            throw access.failed(accountId, apiKeyId, keyPairId, AuditAction.ENCAPSULATE, e);
         }
     }
 
@@ -95,20 +82,20 @@ public class KeyExchangeService {
      * no error, exactly like a correct one: that is how ML-KEM is designed, and it must stay that way.
      */
     public byte[] decapsulate(UUID accountId, UUID apiKeyId, UUID keyPairId, String ciphertextBase64) {
-        KeyPairEntity keyPair = usableKey(accountId, apiKeyId, keyPairId, AuditAction.DECAPSULATE);
+        KeyPairEntity keyPair = access.usableKey(accountId, apiKeyId, keyPairId, Algorithm.ML_KEM_1024,
+                AuditAction.DECAPSULATE);
         byte[] ciphertext = decodeCiphertext(ciphertextBase64);
         if (ciphertext == null) {
-            audit(accountId, apiKeyId, keyPairId, AuditAction.DECAPSULATE, false);
-            throw new ApiException(HttpStatus.BAD_REQUEST, "invalid_request");
+            throw access.invalidRequest(accountId, apiKeyId, keyPairId, AuditAction.DECAPSULATE);
         }
         byte[] encodedPrivateKey = null;
         try {
             encodedPrivateKey = encryptor.decrypt(keyPair.getPrivateKeyCiphertext(), keyPairId, accountId);
             byte[] sharedSecret = decapsulate(encodedPrivateKey, ciphertext);
-            audit(accountId, apiKeyId, keyPairId, AuditAction.DECAPSULATE, true);
+            access.audit(accountId, apiKeyId, keyPairId, AuditAction.DECAPSULATE, true);
             return sharedSecret;
         } catch (GeneralSecurityException | RuntimeException e) {
-            throw failed(accountId, apiKeyId, keyPairId, AuditAction.DECAPSULATE, e);
+            throw access.failed(accountId, apiKeyId, keyPairId, AuditAction.DECAPSULATE, e);
         } finally {
             PrivateKeyEncryptor.wipe(encodedPrivateKey);
         }
@@ -151,56 +138,12 @@ public class KeyExchangeService {
      * Re-encoding must give the same text, so there is only one accepted spelling of each ciphertext.
      */
     static byte[] decodeCiphertext(String text) {
-        // 1568 bytes are 2092 Base64 characters; anything longer is refused before decoding.
-        if (text == null || text.length() != 2092) {
-            return null;
-        }
-        byte[] decoded;
-        try {
-            decoded = Base64.getDecoder().decode(text);
-        } catch (IllegalArgumentException e) {
-            return null;
-        }
-        if (decoded.length != CIPHERTEXT_BYTES || !Base64.getEncoder().encodeToString(decoded).equals(text)) {
-            return null;
-        }
-        return decoded;
-    }
-
-    /** The account's own active ML-KEM-1024 key pair. Every refusal is audited. */
-    private KeyPairEntity usableKey(UUID accountId, UUID apiKeyId, UUID keyPairId, AuditAction action) {
-        KeyPairEntity keyPair = keyPairs.findByKeyPairIdAndAccountId(keyPairId, accountId).orElse(null);
-        if (keyPair == null) {
-            // Another team's key and an unknown id look the same. No key id is recorded: it may not exist.
-            audit(accountId, apiKeyId, null, action, false);
-            throw new ApiException(HttpStatus.NOT_FOUND, "key_not_found");
-        }
-        if (!Algorithm.ML_KEM_1024.displayName().equals(keyPair.getAlgorithm())) {
-            audit(accountId, apiKeyId, keyPairId, action, false);
-            throw new ApiException(HttpStatus.BAD_REQUEST, "wrong_key_type");
-        }
-        if (!KeyPairEntity.STATUS_ACTIVE.equals(keyPair.getStatus())) {
-            audit(accountId, apiKeyId, keyPairId, action, false);
-            throw new ApiException(HttpStatus.BAD_REQUEST, "key_not_active");
-        }
-        return keyPair;
+        return StrictBase64.decode(text, CIPHERTEXT_BYTES, CIPHERTEXT_BYTES);
     }
 
     private static void checkSizes(int ciphertextBytes, int sharedSecretBytes) {
         if (ciphertextBytes != CIPHERTEXT_BYTES || sharedSecretBytes != SHARED_SECRET_BYTES) {
             throw new IllegalStateException("Unexpected ML-KEM-1024 output size");
         }
-    }
-
-    private ApiException failed(UUID accountId, UUID apiKeyId, UUID keyPairId, AuditAction action, Exception e) {
-        // Logged by type only: a message could contain key material.
-        log.error("{} failed for key pair {} ({})", action.value(), keyPairId, e.getClass().getSimpleName());
-        audit(accountId, apiKeyId, keyPairId, action, false);
-        return new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "operation_failed");
-    }
-
-    private void audit(UUID accountId, UUID apiKeyId, UUID keyPairId, AuditAction action, boolean success) {
-        Instant now = clock.instant().truncatedTo(ChronoUnit.MICROS);
-        auditLogs.save(new AuditLogEntity(accountId, apiKeyId, keyPairId, action, success, now));
     }
 }

@@ -48,7 +48,7 @@ import tools.jackson.databind.json.JsonMapper;
  * <li>Redirects are never followed, so the key is never sent to a server other than the one configured.</li>
  * <li>Every call has a connect timeout and a total timeout. Responses over 16 MiB are refused.</li>
  * <li>Responses are checked strictly: every field must be present, ids must match the request, a shared
- * secret must be 32 bytes and a ciphertext 1568 bytes.</li>
+ * secret must be 32 bytes, a ciphertext 1568 bytes and a signature 3309 bytes.</li>
  * </ul>
  *
  * <p>An instance is immutable and safe to share between threads. Close it when done to free its threads.
@@ -61,6 +61,12 @@ public final class QuantumLockClient implements AutoCloseable {
     public static final Duration DEFAULT_REQUEST_TIMEOUT = Duration.ofSeconds(30);
     /** Largest response body accepted, in bytes. */
     public static final int MAX_RESPONSE_BYTES = 16 * 1024 * 1024;
+    /** Length of an ML-DSA-65 signature in bytes (FIPS 204). */
+    public static final int SIGNATURE_LENGTH = 3309;
+    /** Largest message the API signs or verifies, in bytes. */
+    public static final int MAX_MESSAGE_LENGTH = 32 * 1024;
+    /** Largest context string, in bytes (FIPS 204). */
+    public static final int MAX_CONTEXT_LENGTH = 255;
 
     /** Same format the QuantumLock server issues and checks. */
     private static final Pattern API_KEY_FORMAT = Pattern.compile("ql_(test|live)_[A-Za-z0-9_-]{43}");
@@ -153,6 +159,72 @@ public final class QuantumLockClient implements AutoCloseable {
             return new SharedSecret(base64(body, "sharedSecret"));
         } finally {
             Arrays.fill(raw, (byte) 0);
+        }
+    }
+
+    /** Signs a message with the private key of an active ML-DSA-65 key pair, with no context string. */
+    public byte[] sign(UUID keyPairId, byte[] message) {
+        return sign(keyPairId, message, new byte[0]);
+    }
+
+    /**
+     * Signs a message (1 byte to 32 KiB) with the private key of an active ML-DSA-65 key pair (FIPS 204, hedged).
+     * The context string (at most 255 bytes, may be empty) binds the signature to a purpose, for example
+     * "invoices": the same context must be given to verify it. Returns the 3309-byte signature, which is not secret.
+     */
+    public byte[] sign(UUID keyPairId, byte[] message, byte[] context) {
+        Objects.requireNonNull(keyPairId, "keyPairId");
+        checkMessageAndContext(message, context);
+        Map<String, String> fields = Map.of("message", Base64.getEncoder().encodeToString(message),
+                "context", Base64.getEncoder().encodeToString(context));
+        JsonNode body = call("POST", "/api/v1/keys/" + keyPairId + "/sign", json.writeValueAsString(fields), 200);
+        requireSameId(keyPairId, uuid(body, "keyPairId"));
+        byte[] signature = base64(body, "signature");
+        if (signature.length != SIGNATURE_LENGTH) {
+            throw new QuantumLockResponseException("signature has the wrong length");
+        }
+        return signature;
+    }
+
+    /** Checks a signature made with no context string. */
+    public boolean verify(UUID keyPairId, byte[] message, byte[] signature) {
+        return verify(keyPairId, message, signature, new byte[0]);
+    }
+
+    /**
+     * True when the signature is valid for the message and context under the public key of an active ML-DSA-65
+     * key pair. A signature that does not match gives false, not an exception.
+     */
+    public boolean verify(UUID keyPairId, byte[] message, byte[] signature, byte[] context) {
+        Objects.requireNonNull(keyPairId, "keyPairId");
+        Objects.requireNonNull(signature, "signature");
+        checkMessageAndContext(message, context);
+        if (signature.length != SIGNATURE_LENGTH) {
+            throw new IllegalArgumentException("An ML-DSA-65 signature is " + SIGNATURE_LENGTH + " bytes, this one is "
+                    + signature.length);
+        }
+        Base64.Encoder b64 = Base64.getEncoder();
+        Map<String, String> fields = Map.of("message", b64.encodeToString(message),
+                "signature", b64.encodeToString(signature), "context", b64.encodeToString(context));
+        JsonNode body = call("POST", "/api/v1/keys/" + keyPairId + "/verify", json.writeValueAsString(fields), 200);
+        requireSameId(keyPairId, uuid(body, "keyPairId"));
+        JsonNode valid = body.get("valid");
+        if (valid == null || !valid.isBoolean()) {
+            throw new QuantumLockResponseException("response field valid is missing");
+        }
+        return valid.booleanValue();
+    }
+
+    private static void checkMessageAndContext(byte[] message, byte[] context) {
+        Objects.requireNonNull(message, "message");
+        Objects.requireNonNull(context, "context");
+        if (message.length == 0 || message.length > MAX_MESSAGE_LENGTH) {
+            throw new IllegalArgumentException("A message must be 1 to " + MAX_MESSAGE_LENGTH + " bytes, this one is "
+                    + message.length);
+        }
+        if (context.length > MAX_CONTEXT_LENGTH) {
+            throw new IllegalArgumentException("A context must be at most " + MAX_CONTEXT_LENGTH
+                    + " bytes, this one is " + context.length);
         }
     }
 

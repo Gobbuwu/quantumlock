@@ -28,6 +28,8 @@ class SampleApplicationTest {
 
     static final String API_KEY = "ql_test_" + "C".repeat(43);
     static final UUID ID = UUID.randomUUID();
+    static final UUID SIGNING_ID = UUID.randomUUID();
+    static final String SIGNATURE = Base64.getEncoder().encodeToString(new byte[3309]);
     static final byte[] CIPHERTEXT = new byte[1568];
     static final byte[] SECRET = new byte[32];
 
@@ -42,6 +44,7 @@ class SampleApplicationTest {
 
     HttpServer api;
     final List<String> calls = new CopyOnWriteArrayList<>();
+    volatile boolean acceptEverySignature;
 
     @AfterEach
     void stop() {
@@ -49,7 +52,7 @@ class SampleApplicationTest {
     }
 
     @Test
-    void generatesAKeyAndAgreesOnASecret(CapturedOutput output) throws Exception {
+    void agreesOnASecretThenSignsAndVerifies(CapturedOutput output) throws Exception {
         start(SECRET);
 
         assertThat(runApp()).isEqualTo(0);
@@ -57,9 +60,15 @@ class SampleApplicationTest {
         assertThat(calls).containsExactly(
                 "POST /api/v1/keys/generate",
                 "POST /api/v1/keys/" + ID + "/encapsulate",
-                "POST /api/v1/keys/" + ID + "/decapsulate");
+                "POST /api/v1/keys/" + ID + "/decapsulate",
+                "POST /api/v1/keys/generate",
+                "POST /api/v1/keys/" + SIGNING_ID + "/sign",
+                "POST /api/v1/keys/" + SIGNING_ID + "/verify",
+                "POST /api/v1/keys/" + SIGNING_ID + "/verify");
         assertThat(output).contains("Generated ML-KEM-1024 key pair " + ID)
                 .contains("Shared secrets match: true")
+                .contains("Generated ML-DSA-65 key pair " + SIGNING_ID)
+                .contains("Signature: 3309 bytes. Signature valid: true. Changed message accepted: false")
                 .doesNotContain(API_KEY)
                 .doesNotContain(Base64.getEncoder().encodeToString(SECRET));
     }
@@ -72,6 +81,15 @@ class SampleApplicationTest {
 
         assertThat(runApp()).isEqualTo(1);
         assertThat(output).contains("Shared secrets match: false");
+    }
+
+    @Test
+    void exitsWithOneWhenAChangedMessageIsAccepted(CapturedOutput output) throws Exception {
+        acceptEverySignature = true;
+        start(SECRET);
+
+        assertThat(runApp()).isEqualTo(1);
+        assertThat(output).contains("Signature valid: true. Changed message accepted: true");
     }
 
     @Test
@@ -103,8 +121,17 @@ class SampleApplicationTest {
             if (!API_KEY.equals(exchange.getRequestHeaders().getFirst("X-API-Key"))) {
                 send(exchange, 401, "{\"error\":\"unauthorized\"}");
             } else if (path.equals("/api/v1/keys/generate")) {
-                send(exchange, 201, "{\"keyPairId\":\"" + ID + "\",\"algorithm\":\"ML-KEM-1024\",\"status\":\"active\","
+                boolean signing = body.contains("ML-DSA-65");
+                send(exchange, 201, "{\"keyPairId\":\"" + (signing ? SIGNING_ID : ID) + "\",\"algorithm\":\""
+                        + (signing ? "ML-DSA-65" : "ML-KEM-1024") + "\",\"status\":\"active\","
                         + "\"publicKey\":\"AAEC\",\"createdAt\":\"2026-11-22T10:15:30Z\"}");
+            } else if (path.equals("/api/v1/keys/" + SIGNING_ID + "/sign") && body.contains(b64(QuantumLockDemo.MESSAGE))
+                    && body.contains(b64(QuantumLockDemo.CONTEXT))) {
+                send(exchange, 200, "{\"keyPairId\":\"" + SIGNING_ID + "\",\"signature\":\"" + SIGNATURE + "\"}");
+            } else if (path.equals("/api/v1/keys/" + SIGNING_ID + "/verify") && body.contains(SIGNATURE)
+                    && body.contains(b64(QuantumLockDemo.CONTEXT))) {
+                boolean valid = acceptEverySignature || body.contains(b64(QuantumLockDemo.MESSAGE));
+                send(exchange, 200, "{\"keyPairId\":\"" + SIGNING_ID + "\",\"valid\":" + valid + "}");
             } else if (path.endsWith("/encapsulate")) {
                 send(exchange, 200, "{\"keyPairId\":\"" + ID + "\",\"ciphertext\":\"" + b64Ciphertext
                         + "\",\"sharedSecret\":\"" + Base64.getEncoder().encodeToString(SECRET) + "\"}");
@@ -116,6 +143,10 @@ class SampleApplicationTest {
             }
         });
         api.start();
+    }
+
+    private static String b64(byte[] bytes) {
+        return Base64.getEncoder().encodeToString(bytes);
     }
 
     private static void send(HttpExchange exchange, int status, String body) throws IOException {

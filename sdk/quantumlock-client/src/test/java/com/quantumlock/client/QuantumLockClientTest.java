@@ -337,6 +337,110 @@ class QuantumLockClientTest {
         }
     }
 
+    // ---- Signatures --------------------------------------------------------------------------------
+
+    static final byte[] SIGNATURE = bytes(3309, 5);
+    static final byte[] MESSAGE = "Invoice 2026-118".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+    static final byte[] CONTEXT = "invoices".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+
+    @Test
+    void signSendsMessageAndContextAsBase64() throws Exception {
+        api.respond(200, "{\"keyPairId\":\"" + ID + "\",\"signature\":\"" + b64(SIGNATURE) + "\"}");
+
+        byte[] signature = client.sign(ID, MESSAGE, CONTEXT);
+
+        FakeApi.Request request = api.onlyRequest();
+        assertThat(request.method()).isEqualTo("POST");
+        assertThat(request.path()).isEqualTo("/api/v1/keys/" + ID + "/sign");
+        assertThat(request.header("X-api-key")).isEqualTo(API_KEY);
+        Map<?, ?> sent = new tools.jackson.databind.json.JsonMapper().readValue(request.body(), Map.class);
+        assertThat(sent).isEqualTo(Map.of("message", b64(MESSAGE), "context", b64(CONTEXT)));
+        assertThat(signature).isEqualTo(SIGNATURE);
+    }
+
+    @Test
+    void signWithoutAContextSendsAnEmptyOne() throws Exception {
+        api.respond(200, "{\"keyPairId\":\"" + ID + "\",\"signature\":\"" + b64(SIGNATURE) + "\"}");
+        client.sign(ID, MESSAGE);
+        Map<?, ?> sent = new tools.jackson.databind.json.JsonMapper().readValue(api.onlyRequest().body(), Map.class);
+        assertThat(sent).isEqualTo(Map.of("message", b64(MESSAGE), "context", ""));
+    }
+
+    @ParameterizedTest
+    @CsvSource({"true,true", "false,false"})
+    void verifySendsEverythingAndReturnsTheAnswer(String answer, boolean expected) throws Exception {
+        api.respond(200, "{\"keyPairId\":\"" + ID + "\",\"valid\":" + answer + "}");
+
+        assertThat(client.verify(ID, MESSAGE, SIGNATURE, CONTEXT)).isEqualTo(expected);
+
+        FakeApi.Request request = api.onlyRequest();
+        assertThat(request.path()).isEqualTo("/api/v1/keys/" + ID + "/verify");
+        Map<?, ?> sent = new tools.jackson.databind.json.JsonMapper().readValue(request.body(), Map.class);
+        assertThat(sent).isEqualTo(Map.of("message", b64(MESSAGE), "signature", b64(SIGNATURE),
+                "context", b64(CONTEXT)));
+    }
+
+    @Test
+    void badSignatureInputsAreRefusedWithoutCallingTheApi() {
+        assertThatThrownBy(() -> client.sign(null, MESSAGE)).isInstanceOf(NullPointerException.class);
+        assertThatThrownBy(() -> client.sign(ID, null)).isInstanceOf(NullPointerException.class);
+        assertThatThrownBy(() -> client.sign(ID, MESSAGE, null)).isInstanceOf(NullPointerException.class);
+        assertThatThrownBy(() -> client.sign(ID, new byte[0])).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> client.sign(ID, new byte[QuantumLockClient.MAX_MESSAGE_LENGTH + 1]))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> client.sign(ID, MESSAGE, new byte[QuantumLockClient.MAX_CONTEXT_LENGTH + 1]))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> client.verify(ID, MESSAGE, null)).isInstanceOf(NullPointerException.class);
+        assertThatThrownBy(() -> client.verify(ID, MESSAGE, new byte[3308]))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> client.verify(ID, MESSAGE, new byte[3310]))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> client.verify(ID, new byte[0], SIGNATURE))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThat(api.requests()).isEmpty();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "{\"keyPairId\":\"0b5c1f64-3f4e-4c1a-9a51-6d2b8f0c7e11\"}",
+            "{\"keyPairId\":\"0b5c1f64-3f4e-4c1a-9a51-6d2b8f0c7e11\",\"signature\":\"AAAA\"}",
+            "{\"keyPairId\":\"0b5c1f64-3f4e-4c1a-9a51-6d2b8f0c7e11\",\"signature\":\"%%%\"}",
+            "{\"keyPairId\":\"ffffffff-3f4e-4c1a-9a51-6d2b8f0c7e11\",\"signature\":\"\"}",
+            "[]",
+    })
+    void malformedSignResponsesAreRefused(String body) {
+        api.respond(200, body);
+        assertThatThrownBy(() -> client.sign(ID, MESSAGE)).isInstanceOf(QuantumLockResponseException.class);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "{\"keyPairId\":\"0b5c1f64-3f4e-4c1a-9a51-6d2b8f0c7e11\"}",
+            "{\"keyPairId\":\"0b5c1f64-3f4e-4c1a-9a51-6d2b8f0c7e11\",\"valid\":\"true\"}",
+            "{\"keyPairId\":\"0b5c1f64-3f4e-4c1a-9a51-6d2b8f0c7e11\",\"valid\":1}",
+            "{\"keyPairId\":\"0b5c1f64-3f4e-4c1a-9a51-6d2b8f0c7e11\",\"valid\":null}",
+            "{\"keyPairId\":\"ffffffff-3f4e-4c1a-9a51-6d2b8f0c7e11\",\"valid\":true}",
+    })
+    void malformedVerifyResponsesAreRefused(String body) {
+        api.respond(200, body);
+        assertThatThrownBy(() -> client.verify(ID, MESSAGE, SIGNATURE)).isInstanceOf(QuantumLockResponseException.class);
+    }
+
+    @Test
+    void aSignatureOfTheWrongLengthIsRefused() {
+        api.respond(200, "{\"keyPairId\":\"" + ID + "\",\"signature\":\"" + b64(new byte[3308]) + "\"}");
+        assertThatThrownBy(() -> client.sign(ID, MESSAGE)).isInstanceOf(QuantumLockResponseException.class)
+                .hasMessage("signature has the wrong length");
+    }
+
+    @Test
+    void signatureErrorsBecomeTypedExceptions() {
+        api.respond(400, "{\"error\":\"wrong_key_type\"}");
+        QuantumLockApiException e = catchThrowableOfType(QuantumLockApiException.class, () -> client.sign(ID, MESSAGE));
+        assertThat(e.status()).isEqualTo(400);
+        assertThat(e.errorCode()).isEqualTo("wrong_key_type");
+    }
+
     // ---- Nothing secret is shown -----------------------------------------------------------------
 
     @Test

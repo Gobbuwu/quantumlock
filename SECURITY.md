@@ -117,7 +117,7 @@ Done in task 3.3. Keep these true:
 
 ### Encapsulation, decapsulation and signatures (task 3.4 and later)
 
-Done for encapsulation and decapsulation in task 3.4. Keep these true, and follow them for signatures:
+Done for encapsulation and decapsulation in task 3.4 and for signatures in KAN-29. Keep these true:
 
 - Decode Base64 strictly and check sizes before calling the library: an ML-KEM-1024 public key is 1568 bytes
   (1590 in the X.509 encoding the API returns),
@@ -126,12 +126,20 @@ Done for encapsulation and decapsulation in task 3.4. Keep these true, and follo
 - Parse every key a client sends with `KeyFactory.getInstance("ML-KEM-1024", "BC")`. The general `"ML-KEM"`
   key factory also accepts ML-KEM-512 and ML-KEM-768 keys, so with it a client could quietly lower the
   security level (`weakerParameterSetIsAcceptedByTheGeneralKeyFactory`, `mlKem1024KeyFactoryRejectsWeakerParameterSets`).
+  Signature keys are parsed the same way, with the `"ML-DSA-65"` key factory and signature only.
 - Answer every kind of bad crypto input with the same 400 and a fixed error code. Never pass on the library's
   exception message.
 - Decapsulation of a tampered ciphertext does not fail, it returns a different secret (FIPS 203 implicit
   rejection). Keep it that way: do not add a "ciphertext was invalid" answer, which would tell an attacker
   something the algorithm is designed to hide.
 - Create one `SecureRandom` and let it seed itself. Never seed it with fixed or time-based values.
+- Signing is hedged (randomized), the FIPS 204 default, so the same message gives a new signature every time.
+  The deterministic variant is used only in the NIST test vectors.
+- A signature that does not match is an answer (`"valid": false`), not an error, and is audited as a successful
+  check. Only a malformed request gets the 400.
+- Messages are 1 byte to 32 KiB and context strings at most 255 bytes (FIPS 204), so a request with a message,
+  a signature and a context stays under the 64 KiB body limit. Nothing a client sends to sign or verify is
+  stored or logged.
 
 ### SDK (task 5.1 and later)
 

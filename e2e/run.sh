@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# End-to-end test of QuantumLock on a fresh setup (KAN-20, KAN-24, KAN-25).
+# End-to-end test of QuantumLock on a fresh setup (KAN-20, KAN-24, KAN-25, KAN-29).
 #
 # Builds everything from nothing: a new PostgreSQL database and user, the schema and demo data, the backend,
 # one API key and the dashboard. A real browser then uses the dashboard (dashboard/e2e/), the Java SDK's sample app
-# (sdk/sample-app) agrees on a shared secret through the API, and the database is
+# (sdk/sample-app) agrees on a shared secret and signs and verifies a message through the API, and the database is
 # checked directly at the end.
 #
 # Needs: Java 21, Node 22 or later, psql, openssl, curl, and a PostgreSQL server reachable with a superuser
@@ -106,9 +106,10 @@ log "Browser test"
 (cd "$ROOT/dashboard" && E2E_API_KEY="$E2E_API_KEY" E2E_BASE_URL="http://127.0.0.1:$DASHBOARD_PORT" \
   npx playwright test --config e2e/playwright.config.js)
 
-log "SDK sample app (KAN-25)"
+log "SDK sample app (KAN-25, KAN-29)"
 # The Java SDK's sample app runs against the same backend, with the same API key: it generates an ML-KEM-1024 key pair,
-# encapsulates, decapsulates and exits with 0 only when both shared secrets match.
+# encapsulates and decapsulates, then generates an ML-DSA-65 key pair, signs a message and verifies it and a changed
+# copy. It exits with 0 only when both shared secrets match, the signature is valid and the changed copy is refused.
 (cd "$ROOT/sdk" && ./mvnw -B -q package -DskipTests)
 SAMPLE_JAR="$ROOT/sdk/sample-app/target/quantumlock-sample-app-0.1.0-SNAPSHOT.jar"
 run_sample() { # api key; prints the app's output, returns its exit code
@@ -120,13 +121,15 @@ if grep -qF -- "$E2E_API_KEY" <<<"$SAMPLE_OUT"; then
   echo "The sample app printed the API key" >&2
   exit 1
 fi
-grep 'KeyExchangeDemo' <<<"$SAMPLE_OUT" || true
-if [ "$SAMPLE_STATUS" -ne 0 ] || ! grep -q 'Shared secrets match: true' <<<"$SAMPLE_OUT"; then
+grep 'QuantumLockDemo' <<<"$SAMPLE_OUT" || true
+if [ "$SAMPLE_STATUS" -ne 0 ] || ! grep -q 'Shared secrets match: true' <<<"$SAMPLE_OUT" \
+    || ! grep -q 'Signature: 3309 bytes. Signature valid: true. Changed message accepted: false' <<<"$SAMPLE_OUT"; then
   echo "The sample app failed (exit code $SAMPLE_STATUS)" >&2
   exit 1
 fi
 SAMPLE_KEY_ID="$(grep -Eo 'Generated ML-KEM-1024 key pair [0-9a-f-]{36}' <<<"$SAMPLE_OUT" | grep -Eo '[0-9a-f-]{36}$' || true)"
-[ -n "$SAMPLE_KEY_ID" ] || { echo "The sample app did not report its key pair" >&2; exit 1; }
+SIGNING_KEY_ID="$(grep -Eo 'Generated ML-DSA-65 key pair [0-9a-f-]{36}' <<<"$SAMPLE_OUT" | grep -Eo '[0-9a-f-]{36}$' || true)"
+[ -n "$SAMPLE_KEY_ID" ] && [ -n "$SIGNING_KEY_ID" ] || { echo "The sample app did not report its key pairs" >&2; exit 1; }
 
 # A well-formed key that was never issued must be refused, and the app must say so without showing the key.
 WRONG_KEY="ql_test_$(openssl rand -base64 32 | tr '+/' '-_' | tr -d '=\n' | cut -c1-43)"
@@ -140,11 +143,13 @@ fi
 echo "A wrong API key is refused with 401 and exit code 1"
 
 log "Database check"
-# Expected after the browser test and the sample app: two ML-KEM-1024 key pairs and one ML-DSA-65 key pair for the demo
+# Expected after the browser test and the sample app: two ML-KEM-1024 key pairs and two ML-DSA-65 key pairs for the demo
 # team, each private key stored only encrypted (format version byte 1, and the PKCS#8 algorithm identifier of either
-# algorithm nowhere in the stored bytes), one successful "generate" audit entry per key pair, and one successful
-# "encapsulate" and one "decapsulate" entry for the sample app's key pair.
-RESULT="$(PGPASSWORD="$DB_PASSWORD" psql -X -tA -U "$APP_PGUSER" -v ON_ERROR_STOP=1 -v sample="$SAMPLE_KEY_ID" <<'SQL'
+# algorithm nowhere in the stored bytes), one successful "generate" audit entry per key pair, one successful
+# "encapsulate" and one "decapsulate" entry for the sample app's ML-KEM key pair, and one successful "sign" and two
+# successful "verify" entries for its ML-DSA key pair (a "no" answer is still a successful check).
+RESULT="$(PGPASSWORD="$DB_PASSWORD" psql -X -tA -U "$APP_PGUSER" -v ON_ERROR_STOP=1 -v sample="$SAMPLE_KEY_ID" \
+  -v signing="$SIGNING_KEY_ID" <<'SQL'
 SELECT
   (SELECT count(*) FROM key_pairs),
   (SELECT string_agg(algorithm, ',' ORDER BY algorithm) FROM key_pairs),
@@ -157,11 +162,15 @@ SELECT
   (SELECT count(*) FROM audit_logs
      WHERE key_pair_id = :'sample'::uuid AND action = 'encapsulate' AND status = 'success'),
   (SELECT count(*) FROM audit_logs
-     WHERE key_pair_id = :'sample'::uuid AND action = 'decapsulate' AND status = 'success')
+     WHERE key_pair_id = :'sample'::uuid AND action = 'decapsulate' AND status = 'success'),
+  (SELECT count(*) FROM audit_logs
+     WHERE key_pair_id = :'signing'::uuid AND action = 'sign' AND status = 'success'),
+  (SELECT count(*) FROM audit_logs
+     WHERE key_pair_id = :'signing'::uuid AND action = 'verify' AND status = 'success')
 SQL
 )"
-EXPECTED="3|ML-DSA-65,ML-KEM-1024,ML-KEM-1024|3|3|1|1"
-echo "key pairs | algorithms | stored encrypted | generate audit rows | sample encapsulate | sample decapsulate"
+EXPECTED="4|ML-DSA-65,ML-DSA-65,ML-KEM-1024,ML-KEM-1024|4|4|1|1|1|2"
+echo "key pairs | algorithms | stored encrypted | generate audit rows | sample encapsulate | sample decapsulate | sample sign | sample verify"
 echo "$RESULT"
 if [ "$RESULT" != "$EXPECTED" ]; then
   echo "Database check failed. Expected $EXPECTED" >&2
