@@ -94,9 +94,22 @@ Every failed call throws a subclass of `QuantumLockException`:
 
 | Exception | When | Example |
 |---|---|---|
-| `QuantumLockApiException` | The API refused the call. `status()` and `errorCode()` tell why. | 401 `unauthorized`, 404 `key_not_found`, 400 `wrong_key_type`, 400 `key_not_active` |
+| `QuantumLockApiException` | The API refused the call. `status()` and `errorCode()` tell why. | 401 `unauthorized`, 404 `key_not_found`, 400 `wrong_key_type`, 400 `key_not_active`, 429 `rate_limited` |
 | `QuantumLockTransportException` | The API could not be reached or the call timed out. Retrying may help. | backend not running |
 | `QuantumLockResponseException` | The answer was not what QuantumLock sends: a redirect, a missing field, a value of the wrong length, another key pair's id or a body over 16 MiB. | a proxy answering instead of the API |
+
+429 `rate_limited` means the API key made too many calls this minute (120 by default) or this computer failed
+the API-key check too often. Nothing was done, so the call can simply be repeated after `retryAfterSeconds()`:
+
+```java
+} catch (QuantumLockApiException e) {
+    if (e.status() == 429) {
+        long wait = e.retryAfterSeconds().orElse(60);   // seconds until the call may be repeated
+    }
+}
+```
+
+The client never retries on its own.
 
 A wrong setting (bad URL, bad key format, zero timeout) throws `IllegalArgumentException` when the client is built.
 
@@ -140,10 +153,10 @@ cd sdk
 ./mvnw verify                                  # Windows: mvnw verify
 ```
 
-139 tests, no backend or database needed:
+145 tests, no backend or database needed:
 
 - `QuantumLockClientTest`: every call against a stand-in API on 127.0.0.1. What is sent (method, path, header,
-  body), every error code, rotation and revocation answers, redirects not followed, wrong lengths, other ids, malformed or oversized bodies,
+  body), every error code and the wait after a 429, rotation and revocation answers, redirects not followed, wrong lengths, other ids, malformed or oversized bodies,
   timeouts, an API that is down, and no key or secret in any `toString`
 - `ClientSettingsTest`: which URLs and keys are accepted, and that a refused value is never repeated
 - `SharedSecretTest`: copies, wiping, constant-time comparison

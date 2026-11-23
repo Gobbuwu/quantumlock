@@ -15,6 +15,12 @@ final class Rejections {
     private Rejections() {
     }
 
+    /** 429 "rate_limited" with a Retry-After header (KAN-31). */
+    static void tooManyRequests(HttpServletResponse response, long retryAfterSeconds) throws IOException {
+        response.setHeader("Retry-After", Long.toString(retryAfterSeconds));
+        write(response, 429, "rate_limited");
+    }
+
     static void write(HttpServletResponse response, int status, String errorCode) throws IOException {
         byte[] body = ("{\"error\":\"" + errorCode + "\"}").getBytes(StandardCharsets.UTF_8);
         response.setStatus(status);

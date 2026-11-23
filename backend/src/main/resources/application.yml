@@ -77,3 +77,10 @@ quantumlock:
     allowed-hosts: ${ALLOWED_HOSTS:localhost,127.0.0.1}
     # Largest request body in bytes. Larger requests get 413.
     max-request-bytes: ${MAX_REQUEST_BYTES:65536}
+  rate-limit:
+    # Over a limit the API answers 429 {"error":"rate_limited"} with a Retry-After header (KAN-31).
+    # Requests one API key may make in a minute:
+    requests-per-minute: ${RATE_LIMIT_PER_MINUTE:120}
+    # Failed API-key checks one client address may cause in a minute. After that every request from the
+    # address gets 429, without its key being checked, until the minute is over.
+    failed-checks-per-minute: ${RATE_LIMIT_FAILED_CHECKS_PER_MINUTE:20}

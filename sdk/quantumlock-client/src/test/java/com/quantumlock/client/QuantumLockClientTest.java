@@ -171,6 +171,7 @@ class QuantumLockClientTest {
             "400, wrong_key_type",
             "400, key_not_active",
             "413, payload_too_large",
+            "429, rate_limited",
             "500, operation_failed",
             "503, service_unavailable",
     })
@@ -182,6 +183,30 @@ class QuantumLockClientTest {
         assertThat(e.status()).isEqualTo(status);
         assertThat(e.errorCode()).isEqualTo(code);
         assertThat(e.getMessage()).isEqualTo("QuantumLock API error " + status + " " + code);
+        assertThat(e.retryAfterSeconds()).isEmpty();
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "60, 60",
+            "1, 1",
+            "'Wed, 21 Oct 2015 07:28:00 GMT', -1",
+            "-5, -1",
+            "1234567, -1",
+    })
+    void aRateLimitedCallSaysHowLongToWait(String header, long expected) {
+        api.respond(request -> new FakeApi.Answer(429, "{\"error\":\"rate_limited\"}",
+                Map.of("Content-Type", "application/json", "Retry-After", header), 0));
+
+        QuantumLockApiException e = catchThrowableOfType(QuantumLockApiException.class, () -> client.listKeyPairs());
+
+        assertThat(e.status()).isEqualTo(429);
+        assertThat(e.errorCode()).isEqualTo("rate_limited");
+        if (expected < 0) {
+            assertThat(e.retryAfterSeconds()).isEmpty();
+        } else {
+            assertThat(e.retryAfterSeconds()).hasValue(expected);
+        }
     }
 
     @ParameterizedTest

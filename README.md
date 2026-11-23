@@ -150,6 +150,12 @@ list them (`GET /api/v1/api-keys`) and revoke one (`DELETE /api/v1/api-keys/{api
 The backend listens on this computer only (`127.0.0.1`) and answers only to the host names `localhost` and
 `127.0.0.1`. That is on purpose, see [SECURITY.md](SECURITY.md). Other settings are listed in `backend/.env.example`.
 
+Requests are rate limited. Each API key may make 120 requests per minute (`RATE_LIMIT_PER_MINUTE`), and a client
+address that fails the API-key check 20 times in a minute (`RATE_LIMIT_FAILED_CHECKS_PER_MINUTE`) is refused for the
+rest of that minute, even with a valid key. Both answers are 429 `{"error": "rate_limited"}` with a `Retry-After`
+header that gives the seconds to wait. A refused request does nothing and is not audited. The health check and the
+API docs are not limited. Set either value in `backend/.env` (1 to 1000000) and restart the backend to change it.
+
 ## 4. Run the tests
 
 ```bash
@@ -173,6 +179,9 @@ Tests use an in-memory H2 database, so PostgreSQL does not need to be running. T
 - attacks over real HTTP against the running application: forged Host header, oversized body, TRACE,
   path tricks, information leaks (`ApiSecurityTest`)
 - the decisions inside the security filters (`SecurityFiltersTest`) and the secure defaults in `application.yml` (`SecureDefaultsTest`)
+- rate limiting: the counting itself, including a memory cap and 8 threads at once (`RateLimiterTest`), and through
+  the API the 429 answer, per-key and per-address limits, that a refused request does nothing and that forwarding
+  headers cannot dodge the limit (`RateLimitTest`), and that out-of-range settings are refused (`RateLimitSettingsTest`)
 - ML-KEM-1024 key generation, encapsulation and decapsulation against NIST's own FIPS 203 test vectors, run
   through the application's code (`MlKem1024KnownAnswerTest`)
 - ML-KEM-1024 and ML-DSA-65 round trips (`PostQuantumSmokeTest`) and how Bouncy Castle reacts to tampered

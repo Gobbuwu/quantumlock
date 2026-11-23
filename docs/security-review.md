@@ -107,3 +107,21 @@ Added Nov 23, 2026. Written with the help of Claude AI.
 | Another team cannot rotate or revoke a key pair, or learn that it exists | Pass | Same 404 `key_not_found` as for an unknown id, audited without a key pair id (`anotherTeamsKeyLooksLikeAnUnknownKey`) |
 | A grace period cannot be stretched or smuggled in another type | Pass | Whole JSON numbers only, 0 to the configured maximum (at most 3650). The settings are checked at startup (`RotationSettings`) |
 | Existing databases can record revocations | Pass | `database/upgrades/001-revoke-action.sql`, run on a database built from the previous schema and on a current one, twice each: the old one then accepts `revoke`, both still refuse unknown actions. The end-to-end test runs it twice on PostgreSQL |
+
+## Addendum: rate limiting (KAN-31)
+
+Added Nov 23, 2026, when rate limiting was added. Written with the help of Claude AI. It closes the two "no rate
+limiting" known limits in SECURITY.md.
+
+| Check | Result | Evidence |
+|---|---|---|
+| A blocked address is refused before its API key is even looked up, and an over-limit key before any work | Pass | `ApiKeyAuthFilter.java:76` (address) and `:98` (key). `RateLimitTest.aRefusedRequestDoesNoWork` checks that refused calls create no key pair and no audit row |
+| The client address cannot be faked with a header | Pass | Only `getRemoteAddr()` is used (`ApiKeyAuthFilter.java:75`). `RateLimitTest.forwardingHeadersDoNotChangeTheAddress` |
+| A flood of made-up keys or addresses cannot use up memory | Pass | At most 10,000 entries per limiter. When full, unknown ones are refused until windows end (`RateLimiter.roomFor`). `RateLimiterTest` checks the cap |
+| Counting is exact under concurrent calls | Pass | All methods are `synchronized`. `RateLimiterTest` allows exactly 100 of 800 calls from 8 threads |
+| The 429 answer reveals nothing | Pass | Fixed body `{"error":"rate_limited"}`, `Retry-After` in whole seconds, the usual security headers. `RateLimitTest.theAnswerRepeatsNothingFromTheRequest` |
+| Limits cannot be switched off by a bad setting | Pass | Values outside 1 to 1,000,000 stop the backend at startup (`WebSecurityConfig.limiter`). `RateLimitSettingsTest` |
+| The log cannot be flooded | Pass | One warning per address per minute, when it reaches the limit (`ApiKeyAuthFilter.java:93`) |
+
+Accepted limits are listed in SECURITY.md: counts are in memory and per backend, fixed windows allow up to twice
+the limit across the turn of a minute, and behind a reverse proxy the proxy must limit per address.

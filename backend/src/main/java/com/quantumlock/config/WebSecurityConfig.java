@@ -1,8 +1,12 @@
 package com.quantumlock.config;
 
+import java.time.Clock;
+import java.time.Duration;
+
 import com.quantumlock.auth.ApiKeyService;
 import com.quantumlock.security.AllowedHostsFilter;
 import com.quantumlock.security.ApiKeyAuthFilter;
+import com.quantumlock.security.RateLimiter;
 import com.quantumlock.security.RequestSizeLimitFilter;
 import com.quantumlock.security.SecurityHeadersFilter;
 import jakarta.servlet.DispatcherType;
@@ -19,6 +23,9 @@ import org.springframework.core.Ordered;
  */
 @Configuration
 public class WebSecurityConfig {
+
+    /** Largest rate limit that can be set: high enough for any load one backend can serve. */
+    static final int MAX_PER_MINUTE = 1_000_000;
 
     @Bean
     public FilterRegistrationBean<SecurityHeadersFilter> securityHeadersFilter() {
@@ -48,11 +55,33 @@ public class WebSecurityConfig {
         return registration;
     }
 
+    /** Most requests one API key may make in a minute (KAN-31). */
     @Bean
-    public FilterRegistrationBean<ApiKeyAuthFilter> apiKeyAuthFilter(ApiKeyService apiKeys) {
-        FilterRegistrationBean<ApiKeyAuthFilter> registration =
-                new FilterRegistrationBean<>(new ApiKeyAuthFilter(apiKeys));
+    public RateLimiter requestsPerKeyLimiter(
+            @Value("${quantumlock.rate-limit.requests-per-minute:120}") int perMinute) {
+        return limiter(perMinute, "RATE_LIMIT_PER_MINUTE");
+    }
+
+    /** Most failed API-key checks one client address may cause in a minute (KAN-31). */
+    @Bean
+    public RateLimiter failedChecksPerAddressLimiter(
+            @Value("${quantumlock.rate-limit.failed-checks-per-minute:20}") int perMinute) {
+        return limiter(perMinute, "RATE_LIMIT_FAILED_CHECKS_PER_MINUTE");
+    }
+
+    @Bean
+    public FilterRegistrationBean<ApiKeyAuthFilter> apiKeyAuthFilter(ApiKeyService apiKeys,
+            RateLimiter failedChecksPerAddressLimiter, RateLimiter requestsPerKeyLimiter) {
+        FilterRegistrationBean<ApiKeyAuthFilter> registration = new FilterRegistrationBean<>(
+                new ApiKeyAuthFilter(apiKeys, failedChecksPerAddressLimiter, requestsPerKeyLimiter));
         registration.setOrder(Ordered.HIGHEST_PRECEDENCE + 40);
         return registration;
+    }
+
+    private static RateLimiter limiter(int perMinute, String setting) {
+        if (perMinute < 1 || perMinute > MAX_PER_MINUTE) {
+            throw new IllegalStateException(setting + " must be 1 to " + MAX_PER_MINUTE + ".");
+        }
+        return new RateLimiter(perMinute, Duration.ofMinutes(1), RateLimiter.DEFAULT_MAX_ENTRIES, Clock.systemUTC());
     }
 }

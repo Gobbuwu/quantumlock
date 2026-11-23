@@ -296,10 +296,12 @@ public final class QuantumLockClient implements AutoCloseable {
         }
 
         int status;
+        String retryAfter;
         byte[] responseBody;
         try {
             HttpResponse<InputStream> response = http.send(request.build(), HttpResponse.BodyHandlers.ofInputStream());
             status = response.statusCode();
+            retryAfter = response.headers().firstValue("Retry-After").orElse(null);
             try (InputStream in = response.body()) {
                 responseBody = in.readNBytes(MAX_RESPONSE_BYTES + 1);
             }
@@ -319,7 +321,7 @@ public final class QuantumLockClient implements AutoCloseable {
         }
         try {
             if (status >= 400 && status <= 599) {
-                throw new QuantumLockApiException(status, errorCode(responseBody));
+                throw new QuantumLockApiException(status, errorCode(responseBody), retryAfter);
             }
             throw new QuantumLockResponseException("unexpected HTTP status " + status);
         } finally {
