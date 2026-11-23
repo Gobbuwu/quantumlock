@@ -8,6 +8,7 @@ import javax.sql.DataSource;
 
 import com.quantumlock.crypto.CryptoProviders;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.security.SecurityRequirements;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -33,6 +34,7 @@ public class HealthController {
 
     @GetMapping
     @Operation(summary = "Report whether the API, database and crypto provider are ready")
+    @SecurityRequirements // none: public, so Swagger UI shows no lock (KAN-41)
     public ResponseEntity<HealthResponse> health() {
         boolean databaseUp = isDatabaseUp();
         boolean cryptoUp = CryptoProviders.isRegistered();

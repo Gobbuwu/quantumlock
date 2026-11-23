@@ -23,7 +23,8 @@ set "MVN_VERSION=3.9.16"
 set "QL_TOOLS=%ROOT%.tools"
 set "QL_MVN_URL=https://repo.maven.apache.org/maven2/org/apache/maven/apache-maven/%MVN_VERSION%/apache-maven-%MVN_VERSION%-bin.zip"
 set "MVN=%QL_TOOLS%\apache-maven-%MVN_VERSION%\bin\mvn.cmd"
-if exist ".mvn\wrapper\maven-wrapper.properties" set "MVN=mvnw.cmd" & goto run
+rem Full path: Windows may be set not to run programs from the current folder (NoDefaultCurrentDirectoryInExePath).
+if exist ".mvn\wrapper\maven-wrapper.properties" set "MVN=%ROOT%backend\mvnw.cmd" & goto run
 where mvn >nul 2>nul
 if not errorlevel 1 set "MVN=mvn" & goto run
 if exist "%MVN%" goto run
