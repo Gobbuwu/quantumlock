@@ -120,7 +120,10 @@ Options, for example to keep a second demo next to your own setup:
 | Print the API key instead of masking it | `-ShowKey` | `--show-key` |
 
 The administrator connection can be changed with the usual `PGHOST`, `PGPORT`, `PGUSER` and `PGPASSWORD` variables.
-GitHub Actions runs the scripts on every pull request that touches them (`.github/workflows/demo.yml`).
+With PostgreSQL from Homebrew on a Mac (`brew install postgresql@16`), the administrator is your macOS user, not
+`postgres`, and needs no password: run `PGUSER="$USER" demo/setup.sh`, and the same for `demo/remove.sh`.
+GitHub Actions runs the scripts on Linux and macOS (with the bash 3.2 that comes with macOS) on every pull request
+that touches them (`.github/workflows/demo.yml`).
 
 To set things up by hand instead, follow steps 1 to 3.
 
@@ -297,7 +300,7 @@ On Windows you can also double-click `run-tests.cmd` in the repository root. It 
 the output to `test-result.txt`.
 
 Tests use an in-memory H2 database, so PostgreSQL does not need to be running. GitHub Actions runs the same build
-on every pull request and every push to main (`.github/workflows/backend-ci.yml`, started by `ci.yml`).
+on Linux and macOS on every pull request and every push to main (`.github/workflows/backend-ci.yml`, started by `ci.yml`).
 
 The Java SDK in `sdk/` has its own tests and CI. See [sdk/README.md](sdk/README.md#tests).
 
@@ -346,7 +349,7 @@ cd dashboard && npm ci && npx playwright install chromium && cd ..
 PGHOST=localhost PGUSER=postgres PGPASSWORD=<postgres password> ./e2e/run.sh
 ```
 
-GitHub Actions runs it on every pull request that touches the backend, dashboard, database or SDK
+GitHub Actions runs it on Linux and macOS on every pull request that touches the backend, dashboard, database or SDK
 (`.github/workflows/e2e.yml`).
 
 <details>
