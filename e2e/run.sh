@@ -64,7 +64,9 @@ DB_PASSWORD="$(openssl rand -hex 24)"
 MASTER_KEY="$(openssl rand -base64 32)"
 mask "$DB_PASSWORD"; mask "$MASTER_KEY"
 CREATED_DB=true
-psql -X -q -v ON_ERROR_STOP=1 -d postgres -v pw="$DB_PASSWORD" <<'SQL'
+# The password reaches psql through its environment, not the command line, so other users cannot see it (KAN-37).
+QL_E2E_DB_PASSWORD="$DB_PASSWORD" psql -X -q -v ON_ERROR_STOP=1 -d postgres <<'SQL'
+\getenv pw QL_E2E_DB_PASSWORD
 CREATE ROLE quantumlock_e2e LOGIN PASSWORD :'pw';
 CREATE DATABASE quantumlock_e2e OWNER quantumlock_e2e;
 SQL
