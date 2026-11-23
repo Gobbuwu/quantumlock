@@ -92,9 +92,11 @@ log "Start the backend on 127.0.0.1:$BACKEND_PORT"
 BACKEND_PID=$!
 wait_for "http://127.0.0.1:$BACKEND_PORT/api/v1/health" 90
 
-log "Start the dashboard on 127.0.0.1:$DASHBOARD_PORT"
+log "Build the dashboard and serve the production build on 127.0.0.1:$DASHBOARD_PORT"
+# The production build is what gets demonstrated, and only it carries the content security policy (vite.config.js).
+(cd "$ROOT/dashboard" && ./node_modules/.bin/vite build >"$WORK/dashboard-build.log" 2>&1) || { cat "$WORK/dashboard-build.log" >&2; exit 1; }
 # Vite is started directly, not through npx, so $DASHBOARD_PID is Vite itself and the cleanup can stop it.
-(cd "$ROOT/dashboard" && QL_API_TARGET="http://127.0.0.1:$BACKEND_PORT" exec ./node_modules/.bin/vite --port "$DASHBOARD_PORT" --strictPort \
+(cd "$ROOT/dashboard" && QL_API_TARGET="http://127.0.0.1:$BACKEND_PORT" exec ./node_modules/.bin/vite preview --port "$DASHBOARD_PORT" --strictPort \
   >"$WORK/dashboard.log" 2>&1) &
 DASHBOARD_PID=$!
 wait_for "http://127.0.0.1:$DASHBOARD_PORT/" 60

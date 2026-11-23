@@ -1,6 +1,7 @@
 // The dashboard on a fresh setup (KAN-24): enter the API key, generate one key pair of each algorithm and see
 // them in the list. Also: a wrong key is refused, the key is forgotten on reload unless the user opts in, and
 // "Forget API key" removes it. e2e/run.sh then checks the database rows.
+// The page is the production build under its content security policy (KAN-22, R1): any CSP violation fails a test.
 import { expect, test } from '@playwright/test'
 
 const apiKey = process.env.E2E_API_KEY
@@ -12,6 +13,21 @@ test.beforeAll(() => {
   if (!apiKey) throw new Error('E2E_API_KEY is not set. Start this test with e2e/run.sh.')
 })
 
+// Collects every CSP violation the browser reports, across reloads, and fails the test if there was one.
+let cspViolations = []
+test.beforeEach(async ({ page }) => {
+  cspViolations = []
+  await page.exposeBinding('__reportCspViolation', (_source, violation) => cspViolations.push(violation))
+  await page.addInitScript(() => {
+    document.addEventListener('securitypolicyviolation', (e) =>
+      window.__reportCspViolation(`${e.effectiveDirective} ${e.blockedURI}`),
+    )
+  })
+})
+test.afterEach(() => {
+  expect(cspViolations, 'content security policy violations').toEqual([])
+})
+
 async function enterKey(page, key, { remember = false } = {}) {
   await expect(page.getByRole('heading', { name: 'Enter your API key' })).toBeVisible()
   await page.getByLabel('API key', { exact: true }).fill(key)
@@ -20,6 +36,29 @@ async function enterKey(page, key, { remember = false } = {}) {
 }
 
 const rows = (page) => page.locator('table.keys tbody tr').filter({ has: page.locator('code.key-id') })
+
+test('the page is served with a strict content security policy that blocks inline script', async ({ page }) => {
+  const response = await page.goto('/')
+  const policy = response.headers()['content-security-policy']
+  expect(policy).toContain("default-src 'none'")
+  expect(policy).toContain("script-src 'self'")
+  expect(policy).toContain("frame-ancestors 'none'")
+  expect(policy).not.toContain('unsafe-inline')
+  expect(policy).not.toContain('unsafe-eval')
+  expect(response.headers()['x-frame-options']).toBe('DENY')
+
+  // An injected inline script must not run, and the browser must report it.
+  await expect(page.getByRole('heading', { name: 'Enter your API key' })).toBeVisible()
+  await page.evaluate(() => {
+    const script = document.createElement('script')
+    script.textContent = 'window.__injected = true'
+    document.head.appendChild(script)
+  })
+  await expect.poll(() => cspViolations.length).toBeGreaterThan(0)
+  expect(await page.evaluate(() => window.__injected)).toBeUndefined()
+  expect(cspViolations[0]).toMatch(/^script-src-elem inline/)
+  cspViolations = [] // expected here; any other violation still fails
+})
 
 test('a key that was never issued is refused', async ({ page }) => {
   await page.goto('/')
