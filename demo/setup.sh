@@ -84,10 +84,10 @@ echo "Tables and demo data loaded."
 
 step "Write $ENV_FILE"
 mkdir -p "$(dirname "$ENV_FILE")"
+# Created empty with mode 600 from the start and never over an existing file (set -C), then filled (KAN-37).
+( umask 077 && set -C && : >"$ENV_FILE" ) || fail "Could not create $ENV_FILE."
 WROTE_ENV=true
-(
-  umask 077
-  cat >"$ENV_FILE" <<ENV
+cat >>"$ENV_FILE" <<ENV
 # Written by demo/setup.sh on $(date -u +%Y-%m-%d). Local secrets: never commit or share this file.
 # MASTER_KEY encrypts every stored private key. Keep a copy somewhere safe: without it they cannot be used.
 DB_URL=jdbc:postgresql://$PGHOST:$PGPORT/$DB_NAME
@@ -95,8 +95,6 @@ DB_USERNAME=$DB_NAME
 DB_PASSWORD=$DB_PASSWORD
 MASTER_KEY=$MASTER_KEY
 ENV
-)
-chmod 600 "$ENV_FILE"
 echo "Written, readable by you only."
 
 step "Build the backend and issue the first API key"

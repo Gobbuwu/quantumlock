@@ -71,9 +71,12 @@ public class WebSecurityConfig {
 
     @Bean
     public FilterRegistrationBean<ApiKeyAuthFilter> apiKeyAuthFilter(ApiKeyService apiKeys,
-            RateLimiter failedChecksPerAddressLimiter, RateLimiter requestsPerKeyLimiter) {
-        FilterRegistrationBean<ApiKeyAuthFilter> registration = new FilterRegistrationBean<>(
-                new ApiKeyAuthFilter(apiKeys, failedChecksPerAddressLimiter, requestsPerKeyLimiter));
+            RateLimiter failedChecksPerAddressLimiter, RateLimiter requestsPerKeyLimiter,
+            FilterRegistrationBean<AllowedHostsFilter> allowedHostsFilter) {
+        // The same allow list as the Host check: an Origin header must name one of these hosts (KAN-36).
+        AllowedHostsFilter allowedHosts = allowedHostsFilter.getFilter();
+        FilterRegistrationBean<ApiKeyAuthFilter> registration = new FilterRegistrationBean<>(new ApiKeyAuthFilter(
+                apiKeys, failedChecksPerAddressLimiter, requestsPerKeyLimiter, allowedHosts::isAllowed));
         registration.setOrder(Ordered.HIGHEST_PRECEDENCE + 40);
         return registration;
     }

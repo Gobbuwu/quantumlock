@@ -48,8 +48,11 @@ describe('API key entry', () => {
     setup()
 
     expect(screen.getByRole('heading', { name: 'Enter your API key' })).toBeInTheDocument()
-    expect(screen.getByLabelText('API key')).toHaveAttribute('type', 'password')
+    // Masked by CSS in a text field: no password field, so the browser offers no login to save (KAN-39).
+    expect(screen.getByLabelText('API key')).toHaveAttribute('type', 'text')
+    expect(screen.getByLabelText('API key')).toHaveClass('masked')
     expect(screen.getByLabelText('API key')).toHaveAttribute('autocomplete', 'off')
+    expect(document.querySelector('input[type="password"]')).toBeNull()
     expect(screen.queryByRole('table')).not.toBeInTheDocument()
   })
 
@@ -58,20 +61,20 @@ describe('API key entry', () => {
     const field = screen.getByLabelText('API key')
 
     await user.type(field, OTHER_KEY)
-    expect(field).toHaveAttribute('type', 'password')
+    expect(field).toHaveClass('masked')
 
     await user.click(screen.getByRole('button', { name: 'Show' }))
-    expect(field).toHaveAttribute('type', 'text')
+    expect(field).not.toHaveClass('masked')
     expect(field).toHaveValue(OTHER_KEY)
     expect(field).toHaveAttribute('spellcheck', 'false')
 
     await user.click(screen.getByRole('button', { name: 'Hide' }))
-    expect(field).toHaveAttribute('type', 'password')
+    expect(field).toHaveClass('masked')
 
     await user.click(screen.getByRole('button', { name: 'Show' }))
     await user.click(screen.getByRole('button', { name: 'Use this key' }))
     expect(await screen.findByRole('alert')).toHaveTextContent(/did not accept this API key/)
-    expect(screen.getByLabelText('API key')).toHaveAttribute('type', 'password')
+    expect(screen.getByLabelText('API key')).toHaveClass('masked')
     expect(screen.getByRole('button', { name: 'Show' })).toBeInTheDocument()
   })
 

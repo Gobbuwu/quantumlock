@@ -159,6 +159,9 @@ cd backend
 ./mvnw spring-boot:run "-Dspring-boot.run.arguments=issue-api-key"     # Windows: mvnw spring-boot:run "-Dspring-boot.run.arguments=issue-api-key"
 ```
 
+For another team, add its account id after a space (not a comma):
+`"-Dspring-boot.run.arguments=issue-api-key <account id>"`.
+
 The key (`ql_test_...`) is printed once and only its hash is stored, so copy it somewhere safe and never commit it.
 In Swagger UI click **Authorize** and paste it. With a key you can also create more keys (`POST /api/v1/api-keys`),
 list them (`GET /api/v1/api-keys`) and revoke one (`DELETE /api/v1/api-keys/{apiKeyId}`).
@@ -167,10 +170,12 @@ The backend listens on this computer only (`127.0.0.1`) and answers only to the 
 `127.0.0.1`. That is on purpose, see [SECURITY.md](SECURITY.md). Other settings are listed in `backend/.env.example`.
 
 Requests are rate limited. Each API key may make 120 requests per minute (`RATE_LIMIT_PER_MINUTE`), and a client
-address that fails the API-key check 20 times in a minute (`RATE_LIMIT_FAILED_CHECKS_PER_MINUTE`) is refused for the
-rest of that minute, even with a valid key. Both answers are 429 `{"error": "rate_limited"}` with a `Retry-After`
-header that gives the seconds to wait. A refused request does nothing and is not audited. The health check and the
-API docs are not limited. Set either value in `backend/.env` (1 to 1000000) and restart the backend to change it.
+address that fails the API-key check 20 times in a minute (`RATE_LIMIT_FAILED_CHECKS_PER_MINUTE`) gets 429 for its
+failed checks for the rest of that minute; a valid key is never refused because of its address. Both answers are
+429 `{"error": "rate_limited"}` with a `Retry-After` header that gives the seconds to wait. A request that a browser
+marks as coming from another web site gets 403 `{"error": "cross_site_request"}` and does not count as a failed
+check. A refused request does nothing and is not audited. The health check and the API docs are not limited. Set
+either value in `backend/.env` (1 to 1000000) and restart the backend to change it.
 
 ## 4. Run the tests
 
@@ -196,7 +201,7 @@ Tests use an in-memory H2 database, so PostgreSQL does not need to be running. T
   path tricks, information leaks (`ApiSecurityTest`)
 - the decisions inside the security filters (`SecurityFiltersTest`) and the secure defaults in `application.yml` (`SecureDefaultsTest`)
 - rate limiting: the counting itself, including a memory cap and 8 threads at once (`RateLimiterTest`), and through
-  the API the 429 answer, per-key and per-address limits, that a refused request does nothing and that forwarding
+  the API the 429 answer, per-key and per-address limits, that a valid key is never locked out, that cross-site requests get 403 without counting, that a refused request does nothing and that forwarding
   headers cannot dodge the limit (`RateLimitTest`), and that out-of-range settings are refused (`RateLimitSettingsTest`)
 - ML-KEM-1024 key generation, encapsulation and decapsulation against NIST's own FIPS 203 test vectors, run
   through the application's code (`MlKem1024KnownAnswerTest`)
@@ -213,7 +218,8 @@ Tests use an in-memory H2 database, so PostgreSQL does not need to be running. T
   arrive and when times are equal), the filters, the limits, other teams' rows and cursors, and every bad
   parameter (`AuditLogApiTest`)
 
-GitHub Actions runs the same build on every push (`.github/workflows/backend-ci.yml`).
+GitHub Actions runs the same build on every pull request and every push to main (`.github/workflows/backend-ci.yml`,
+started by `ci.yml`).
 
 The Java SDK in `sdk/` has its own tests and CI. See [sdk/README.md](sdk/README.md#tests).
 
@@ -224,8 +230,9 @@ and demo data, the backend on port 18080, one API key and the dashboard's produc
 policy) on port 15173. A real browser (Playwright) then refuses a wrong key, generates an ML-KEM-1024 and an ML-DSA-65
 key pair, sees both in the list, and checks that the API key is kept only in memory unless "Remember" is ticked. It
 then generates a third ML-DSA-65 key pair, signs a message and verifies it (a changed message must be refused),
-rotates it, revokes the old one and reads its audit log, all through the dashboard. Any content security policy
-violation fails the test. Next, the Java SDK's sample app generates an ML-KEM-1024 key pair
+rotates it, revokes the old one and reads its audit log, all through the dashboard. axe-core then checks every view
+for accessibility problems at desktop and phone width in both themes, and the keyboard test checks the skip link and
+the sideways-scrolling audit table. Any content security policy violation fails the test. Next, the Java SDK's sample app generates an ML-KEM-1024 key pair
 and agrees on a shared secret through the API, then generates an ML-DSA-65 one, signs a message,
 verifies it and checks that a changed copy is refused. A wrong key must be refused with 401. The script then rotates
 the sample app's ML-KEM key pair, revokes the replacement, checks that the rotated key cannot be rotated again and
@@ -258,7 +265,9 @@ PGHOST=localhost PGUSER=postgres PGPASSWORD=<postgres password> ./e2e/run.sh
 ## Working together
 
 - Create a branch per Jira task and put the key in its name, for example `KAN-15-key-generation`.
-- Open a pull request into `main`; merge when the Backend CI check passes.
+- Open a pull request into `main`; merge when the `summary` check passes. It is the one check the branch rule
+  requires: `.github/workflows/ci.yml` runs the backend, dashboard, SDK, demo and end-to-end checks that the change
+  needs and passes only when all of them pass.
 - Move the Jira task to Done when it is merged.
 - Read the checklist in [SECURITY.md](SECURITY.md) before building the key and API-key endpoints (tasks 3.2 to 3.4).
 

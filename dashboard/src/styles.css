@@ -76,6 +76,11 @@ body {
   top: 1rem;
 }
 
+/* The skip link focuses <main> (KAN-38). Focus moves there for reading, not for typing, so it needs no ring. */
+main:focus {
+  outline: none;
+}
+
 .visually-hidden {
   position: absolute;
   width: 1px;
@@ -417,6 +422,10 @@ label {
   position: relative;
   overflow-x: auto;
 }
+/* Drawn inside the frame: the panel around it would cut off an outline drawn outside. */
+.table-frame:focus-visible {
+  outline-offset: -2px;
+}
 
 table.keys {
   width: 100%;
@@ -673,6 +682,11 @@ table.keys {
 }
 .field-row input {
   flex: 1;
+}
+/* The API key field is a text field, so browsers do not offer to save it as a password (KAN-39); this masks it.
+   Supported by Chrome, Edge, Opera, Safari and Firefox 114 or later. */
+.field input.masked {
+  -webkit-text-security: disc;
 }
 .field-row .button-secondary {
   min-height: 44px;

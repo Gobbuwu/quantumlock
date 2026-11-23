@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import ApiKeyForm from './components/ApiKeyForm.jsx'
 import AuditPage from './components/AuditPage.jsx'
 import KeysPage from './components/KeysPage.jsx'
@@ -64,9 +64,19 @@ export default function App({ api, keyStore = null, mock = import.meta.env.VITE_
   // Stable, so the key list does not reload on every render.
   const keyRejected = useCallback(() => forgetKey(REVOKED_NOTICE), [forgetKey])
 
+  // The skip link moves focus into the page without touching the address: "#main" in the address would be read
+  // by the view router as the key list, and on the Audit log page the link would switch pages (KAN-38, A3).
+  const mainRef = useRef(null)
+  const skipToContent = (event) => {
+    event.preventDefault()
+    mainRef.current.focus()
+  }
+
   return (
     <>
-      <a className="skip-link" href="#main">Skip to content</a>
+      <a className="skip-link" href="#main" onClick={skipToContent}>
+        Skip to content
+      </a>
       <header className="topbar">
         <div className="wrap topbar-inner">
           <span className="brand" translate="no">
@@ -90,29 +100,30 @@ export default function App({ api, keyStore = null, mock = import.meta.env.VITE_
           )}
         </div>
       </header>
-      <div className="wrap page-title">
-        <h1>{TITLES[view].title}</h1>
-        <p className="lede">{TITLES[view].lede}</p>
-        {mock && <p className="mock-notice">Mock mode: this page shows made-up keys and does not call the API.</p>}
-      </div>
-      <main id="main" className={!signedIn ? 'wrap page page-single' : view === 'audit' ? 'wrap page page-wide' : 'wrap page'}>
-        {!signedIn ? (
-          <ApiKeyForm
-            api={api}
-            keyStore={keyStore}
-            notice={notice}
-            onAccepted={() => {
-              setNotice(null)
-              setHasKey(true)
-            }}
-          />
-        ) : (
-          view === 'audit' ? (
+      {/* The title is part of the main landmark, so every piece of content sits in a landmark (KAN-38, A2). */}
+      <main id="main" ref={mainRef} tabIndex={-1}>
+        <div className="wrap page-title">
+          <h1>{TITLES[view].title}</h1>
+          <p className="lede">{TITLES[view].lede}</p>
+          {mock && <p className="mock-notice">Mock mode: this page shows made-up keys and does not call the API.</p>}
+        </div>
+        <div className={!signedIn ? 'wrap page page-single' : view === 'audit' ? 'wrap page page-wide' : 'wrap page'}>
+          {!signedIn ? (
+            <ApiKeyForm
+              api={api}
+              keyStore={keyStore}
+              notice={notice}
+              onAccepted={() => {
+                setNotice(null)
+                setHasKey(true)
+              }}
+            />
+          ) : view === 'audit' ? (
             <AuditPage api={api} keyPairId={keyPairId} onUnauthorized={needsKey ? keyRejected : undefined} />
           ) : (
             <KeysPage api={api} onUnauthorized={needsKey ? keyRejected : undefined} />
-          )
-        )}
+          )}
+        </div>
       </main>
     </>
   )

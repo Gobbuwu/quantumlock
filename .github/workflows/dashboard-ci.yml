@@ -1,17 +1,10 @@
-# Tests and builds the React dashboard on every pull request and on every push to main that touches it.
+# Tests and builds the React dashboard. Started by ci.yml when a change touches it.
 name: Dashboard CI
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - "dashboard/**"
-      - ".github/workflows/dashboard-ci.yml"
-  pull_request:
-    paths:
-      - "dashboard/**"
-      - ".github/workflows/dashboard-ci.yml"
+  # Started by ci.yml for every pull request and every push to main, when the files this checks have changed.
+  workflow_call:
+  # Adds a "Run workflow" button on the Actions tab, to start this check by hand.
   workflow_dispatch:
 
 # Least privilege: this workflow only needs to read the code.

@@ -61,7 +61,7 @@ public final class AllowedHostsFilter implements Filter {
     }
 
     /** True when the host name of the request (the Host header without the port) is on the allow list. */
-    boolean isAllowed(String serverName) {
+    public boolean isAllowed(String serverName) {
         return allowedHosts.contains(normalize(serverName));
     }
 

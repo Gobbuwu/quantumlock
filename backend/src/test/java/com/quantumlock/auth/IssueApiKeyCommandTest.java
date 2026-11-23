@@ -41,6 +41,23 @@ class IssueApiKeyCommandTest {
     }
 
     @Test
+    void refusesNearMissesInsteadOfStartingTheServer() {
+        // KAN-41: the Maven plugin splits on spaces, so the comma form arrives as one argument.
+        String comma = "issue-api-key," + IssueApiKeyCommand.DEMO_ACCOUNT;
+        assertTrue(IssueApiKeyCommand.isMistyped(new String[] {comma}));
+        assertTrue(IssueApiKeyCommand.isMistyped(new String[] {"--spring.profiles.active=dev", comma}));
+        assertTrue(IssueApiKeyCommand.isMistyped(new String[] {"Issue-API-Key"}));
+        assertTrue(IssueApiKeyCommand.isMistyped(new String[] {"issue-api-keys"}));
+        assertFalse(IssueApiKeyCommand.isRequested(new String[] {comma}));
+
+        assertFalse(IssueApiKeyCommand.isMistyped(new String[] {"issue-api-key"}));
+        assertFalse(IssueApiKeyCommand.isMistyped(new String[] {"issue-api-key", "x"}));
+        assertFalse(IssueApiKeyCommand.isMistyped(new String[] {}));
+        assertFalse(IssueApiKeyCommand.isMistyped(new String[] {"--server.port=9090"}));
+        assertTrue(IssueApiKeyCommand.USAGE.contains("issue-api-key <account id>"), IssueApiKeyCommand.USAGE);
+    }
+
+    @Test
     void issuesAWorkingKeyForTheDemoTeamByDefault() {
         assertEquals(0, run("issue-api-key"));
 
