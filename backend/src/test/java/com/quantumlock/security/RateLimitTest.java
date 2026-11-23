@@ -89,14 +89,14 @@ class RateLimitTest {
     }
 
     @Test
-    void tooManyFailedChecksBlockTheAddressEvenForAValidKey() throws Exception {
+    void tooManyFailedChecksBlockTheAddressButNeverAValidKey() throws Exception {
         String valid = apiKeys.issue(DEMO_ACCOUNT, "test").key();
         for (int i = 0; i < 3; i++) {
             mockMvc.perform(from("10.0.4.1", get("/api/v1/keys")).header(ApiKeys.HEADER, WRONG_KEY))
                     .andExpect(status().isUnauthorized());
         }
-        // Guessing now gets no answer at all, whatever is sent: wrong key, no key, a valid key.
-        for (String key : new String[] {WRONG_KEY, null, valid}) {
+        // Failed checks from the address now get 429: a wrong key, a malformed key, no key at all.
+        for (String key : new String[] {WRONG_KEY, "not-a-key", null}) {
             MockHttpServletRequestBuilder request = from("10.0.4.1", get("/api/v1/keys"));
             if (key != null) {
                 request.header(ApiKeys.HEADER, key);
@@ -104,9 +104,49 @@ class RateLimitTest {
             mockMvc.perform(request).andExpect(status().isTooManyRequests())
                     .andExpect(content().json("{\"error\":\"rate_limited\"}", true));
         }
-        // Another address is not affected.
-        mockMvc.perform(from("10.0.4.2", get("/api/v1/keys")).header(ApiKeys.HEADER, valid))
+        // A valid key from the same address still works (KAN-36): every local client shares 127.0.0.1.
+        mockMvc.perform(from("10.0.4.1", get("/api/v1/keys")).header(ApiKeys.HEADER, valid))
                 .andExpect(status().isOk());
+        mockMvc.perform(from("10.0.4.1", get("/api/v1/keys")).header(ApiKeys.HEADER, WRONG_KEY))
+                .andExpect(status().isTooManyRequests());
+    }
+
+    @Test
+    void aLockedOutAddressCannotStopTheLocalDashboard() throws Exception {
+        // The audit's case (F2): another program on the computer fails the check over and over from 127.0.0.1.
+        String dashboardKey = apiKeys.issue(DEMO_ACCOUNT, "test").key();
+        for (int i = 0; i < 10; i++) {
+            mockMvc.perform(from("127.0.0.1", get("/api/v1/keys")));
+        }
+        mockMvc.perform(from("127.0.0.1", get("/api/v1/keys")))
+                .andExpect(status().isTooManyRequests());
+        mockMvc.perform(from("127.0.0.1", get("/api/v1/keys")).header(ApiKeys.HEADER, dashboardKey)
+                        .header("Sec-Fetch-Site", "same-origin").header("Origin", "http://127.0.0.1:4173"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void crossSiteRequestsAreRefusedWithoutCountingAsFailures() throws Exception {
+        String valid = apiKeys.issue(DEMO_ACCOUNT, "test").key();
+        // A hostile page loads images from the API: the browser marks them cross-site and sends no key.
+        for (int i = 0; i < 10; i++) {
+            mockMvc.perform(from("10.0.9.1", get("/api/v1/keys")).header("Sec-Fetch-Site", "cross-site"))
+                    .andExpect(status().isForbidden())
+                    .andExpect(content().json("{\"error\":\"cross_site_request\"}", true));
+        }
+        // An older browser without Sec-Fetch-Site still sends Origin on a form post.
+        for (int i = 0; i < 10; i++) {
+            mockMvc.perform(from("10.0.9.1", post("/api/v1/keys/generate")).header("Origin", "https://evil.example"))
+                    .andExpect(status().isForbidden());
+        }
+        // None of them counted: the next 3 failures still get 401, and a cross-site request with a key gets 403.
+        for (int i = 0; i < 3; i++) {
+            mockMvc.perform(from("10.0.9.1", get("/api/v1/keys")).header(ApiKeys.HEADER, WRONG_KEY))
+                    .andExpect(status().isUnauthorized());
+        }
+        mockMvc.perform(from("10.0.9.1", get("/api/v1/keys")).header(ApiKeys.HEADER, valid)
+                        .header("Sec-Fetch-Site", "cross-site"))
+                .andExpect(status().isForbidden());
     }
 
     @Test
@@ -122,7 +162,7 @@ class RateLimitTest {
         }
         mockMvc.perform(from("10.0.5.1", get("/api/v1/keys")).header(ApiKeys.HEADER, WRONG_KEY))
                 .andExpect(status().isUnauthorized());
-        mockMvc.perform(from("10.0.5.1", get("/api/v1/keys")).header(ApiKeys.HEADER, valid))
+        mockMvc.perform(from("10.0.5.1", get("/api/v1/keys")).header(ApiKeys.HEADER, WRONG_KEY))
                 .andExpect(status().isTooManyRequests());
     }
 
