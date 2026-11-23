@@ -48,11 +48,14 @@ log "Setup"
 API_KEY="$(grep -Eo 'ql_test_[A-Za-z0-9_-]{43}' "$WORK/setup.out" | head -n 1 || true)"
 [ -n "$API_KEY" ] || { cat "$WORK/setup.out"; fail "setup printed no API key"; }
 if [ "${GITHUB_ACTIONS:-}" = "true" ]; then echo "::add-mask::$API_KEY"; fi
-grep -v 'Picked up' "$WORK/setup.out"
+grep -v -e 'Picked up' -e '^::add-mask::' "$WORK/setup.out"
+# On GitHub Actions the scripts hand each secret to the runner in an ::add-mask:: line, which the runner hides from the
+# log. Every other line counts as shown.
+grep -v '^::add-mask::' "$WORK/setup.out" >"$WORK/setup.shown" || true
 for name in DB_PASSWORD MASTER_KEY; do
   value="$(grep "^$name=" "$ENV_FILE" | cut -d= -f2-)"
   [ -n "$value" ] || fail "$name missing from the settings file"
-  ! grep -qF -- "$value" "$WORK/setup.out" || fail "setup printed $name"
+  ! grep -qF -- "$value" "$WORK/setup.shown" || fail "setup printed $name"
 done
 [ "$(stat -c %a "$ENV_FILE")" = 600 ] || fail "the settings file is readable by others"
 [ "$(head -c 3 "$ENV_FILE" | od -An -tx1 | tr -d ' ')" != efbbbf ] || fail "the settings file starts with a byte order mark"
