@@ -34,3 +34,5 @@ dist/
 # Playwright run status from the end-to-end test (e2e/run.sh)
 test-results/
 build/
+# Logs and build marks of the demo scripts (demo/start.sh, demo\start.ps1)
+demo/.run/
