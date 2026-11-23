@@ -10,7 +10,7 @@ No high or medium security issue was found in the application. Every test suite 
 |---|---|---|
 | Medium | 3 | S1 private vulnerability reporting off, S2 branch protection requires only the backend check, A1 audit table not reachable by keyboard |
 | Low | 10 | F1, F2, F3 from the scan, P1 any API key can create more API keys, P2 no limit or paging on key lists, P3 browser offers to save the API key, S3 Dependabot security updates off, A2 page title outside a landmark, A3 skip link leaves the Audit log page, D1 issue-api-key comment shows the wrong syntax |
-| Info | 7 | I1 to I7 |
+| Info | 10 | D2, D3, I1 to I8 |
 
 ## What was checked
 
@@ -76,6 +76,14 @@ The full scan report is kept outside the repository. Summary:
 - **I5.** CI runs on Linux only; Windows is covered by the manual laptop runs in this audit.
 - **I6.** Jira epics KAN-1 to KAN-8 are still To Do although most of their tasks are Done.
 - **I7.** A `ql_try` test database may remain on the laptop from KAN-34 testing.
+- **I8.** The dashboard cannot create, list or revoke API keys; that is done through Swagger UI or the API. Fine for the capstone, worth adding for a hosted version.
+
+## Limits of this audit
+
+- The code scan reads the code; it ran nothing. The black-box run and the walkthrough cover what was executed.
+- osv-scanner and the GitHub advisory database could not be reached from the test machine; npm audit, Dependabot alerts and Maven Central were used instead.
+- Windows 11 (laptop) and Linux were tested. macOS was not.
+- Test code was not security reviewed, only run.
 
 ## OWASP API Security Top 10 (2023)
 
