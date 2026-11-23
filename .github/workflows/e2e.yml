@@ -3,24 +3,9 @@
 name: End-to-end
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - "backend/**"
-      - "dashboard/**"
-      - "database/**"
-      - "e2e/**"
-      - "sdk/**"
-      - ".github/workflows/e2e.yml"
-  pull_request:
-    paths:
-      - "backend/**"
-      - "dashboard/**"
-      - "database/**"
-      - "e2e/**"
-      - "sdk/**"
-      - ".github/workflows/e2e.yml"
+  # Started by ci.yml for every pull request and every push to main, when the files this checks have changed.
+  workflow_call:
+  # Adds a "Run workflow" button on the Actions tab, to start this check by hand.
   workflow_dispatch:
 
 # Least privilege: this workflow only needs to read the code.

@@ -1,0 +1,103 @@
+# Runs the checks a change needs and reports one result, "summary", which the branch rule on main requires (KAN-40).
+#
+# Each check lives in its own workflow (backend-ci.yml, dashboard-ci.yml, sdk-ci.yml, demo.yml, e2e.yml) and is
+# started from here only when the files it covers have changed, as their path filters did before. The summary job
+# always runs: it passes when every check passed or was not needed, and fails when any failed, was cancelled or
+# could not start. Requiring it means a pull request that breaks the dashboard, the demo or the end-to-end test
+# cannot be merged, while a pull request that does not touch them is not held up by checks that never ran.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+# Least privilege: read the code. The changes job also reads the pull request's file list.
+permissions:
+  contents: read
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      dashboard: ${{ steps.pick.outputs.dashboard }}
+      sdk: ${{ steps.pick.outputs.sdk }}
+      demo: ${{ steps.pick.outputs.demo }}
+      e2e: ${{ steps.pick.outputs.e2e }}
+    steps:
+      - name: Pick the checks this change needs
+        id: pick
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          EVENT: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          all=false
+          if [ "$EVENT" = "pull_request" ]; then
+            # The file list comes from the API, so nothing from the pull request is checked out or run here.
+            gh api --paginate "repos/$REPO/pulls/$PR_NUMBER/files" --jq '.[].filename' >files.txt
+            echo "Changed files: $(wc -l <files.txt)"
+          else
+            # Pushes to main and runs by hand check everything.
+            all=true
+            : >files.txt
+          fi
+          changed() { [ "$all" = true ] || grep -Eq "$1" files.txt; }
+          # A change to this file runs every check.
+          if grep -Fxq ".github/workflows/ci.yml" files.txt; then all=true; fi
+          pick() { if changed "$2"; then echo "$1=true"; else echo "$1=false"; fi; }
+          {
+            pick dashboard '^(dashboard/|\.github/workflows/dashboard-ci\.yml$)'
+            pick sdk '^(sdk/|\.github/workflows/sdk-ci\.yml$)'
+            pick demo '^(backend/|dashboard/|database/|demo/|\.github/workflows/demo\.yml$)'
+            pick e2e '^(backend/|dashboard/|database/|e2e/|sdk/|\.github/workflows/e2e\.yml$)'
+          } | tee -a "$GITHUB_OUTPUT"
+
+  # The backend check runs for every change, as before.
+  backend:
+    uses: ./.github/workflows/backend-ci.yml
+
+  dashboard:
+    needs: changes
+    if: needs.changes.outputs.dashboard == 'true'
+    uses: ./.github/workflows/dashboard-ci.yml
+
+  sdk:
+    needs: changes
+    if: needs.changes.outputs.sdk == 'true'
+    uses: ./.github/workflows/sdk-ci.yml
+
+  demo:
+    needs: changes
+    if: needs.changes.outputs.demo == 'true'
+    uses: ./.github/workflows/demo.yml
+
+  e2e:
+    needs: changes
+    if: needs.changes.outputs.e2e == 'true'
+    uses: ./.github/workflows/e2e.yml
+
+  summary:
+    name: summary
+    if: always()
+    needs: [changes, backend, dashboard, sdk, demo, e2e]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Every needed check passed
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          set -euo pipefail
+          echo "$NEEDS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          # The changes job must succeed; every other job must have passed or been skipped as not needed.
+          echo "$NEEDS" | jq -e '.changes.result == "success"
+            and ([.[] | .result] | all(. == "success" or . == "skipped"))' >/dev/null
