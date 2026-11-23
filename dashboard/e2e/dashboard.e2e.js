@@ -2,6 +2,7 @@
 // them in the list. Also: a wrong key is refused, the key is forgotten on reload unless the user opts in, and
 // "Forget API key" removes it. e2e/run.sh then checks the database rows.
 // The page is the production build under its content security policy (KAN-22, R1): any CSP violation fails a test.
+import AxeBuilder from '@axe-core/playwright'
 import { expect, test } from '@playwright/test'
 
 const apiKey = process.env.E2E_API_KEY
@@ -174,4 +175,55 @@ test('sign, verify, rotate and revoke an ML-DSA-65 key pair, then read its audit
   await expect(auditRows.first()).toContainText('Success') // "not valid" is still a successful check
   expect(page.url()).not.toContain('Invoice')
   expect(await page.evaluate(() => [localStorage.length, sessionStorage.length])).toEqual([0, 0])
+})
+
+// KAN-38: no axe-core violations on any view, at desktop and phone width, in the dark and the light theme.
+test('axe-core finds no accessibility violations on any view', async ({ page }) => {
+  const check = async (what) => {
+    const results = await new AxeBuilder({ page }).analyze()
+    const found = results.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(' ')).join(', ')}`)
+    expect(found, what).toEqual([])
+  }
+  for (const size of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) {
+    for (const colorScheme of ['dark', 'light']) {
+      await page.setViewportSize(size)
+      await page.emulateMedia({ colorScheme })
+      const where = `${size.width}px ${colorScheme}`
+      await page.goto('/')
+      await expect(page.getByRole('heading', { name: 'Enter your API key' })).toBeVisible()
+      await check(`API key form, ${where}`)
+      await enterKey(page, apiKey)
+      await expect(rows(page)).toHaveCount(4)
+      await check(`Key pairs, ${where}`)
+      await page.getByRole('link', { name: 'Audit log' }).click()
+      await expect(page.locator('table.audit-table tbody tr').first()).toBeVisible()
+      await check(`Audit log, ${where}`)
+    }
+  }
+})
+
+test('"Skip to content" keeps the Audit log open and moves focus into the page (KAN-38)', async ({ page }) => {
+  await page.goto('/')
+  await enterKey(page, apiKey)
+  await page.getByRole('link', { name: 'Audit log' }).click()
+  const table = page.getByRole('region', { name: 'Audit log entries' })
+  await expect(table).toBeVisible()
+
+  // Focus is on the "Audit log" link just clicked; the skip link is the first stop of the page.
+  await page.getByRole('link', { name: 'Skip to content' }).focus()
+  await expect(page.getByRole('link', { name: 'Skip to content' })).toBeVisible()
+  await page.keyboard.press('Enter')
+  await expect(page.getByRole('main')).toBeFocused()
+  expect(new URL(page.url()).hash).toBe('#audit')
+  await expect(page.getByRole('heading', { name: 'Audit log', level: 1 })).toBeVisible()
+  await page.keyboard.press('Tab')
+  await expect(page.getByRole('button', { name: 'Refresh' })).toBeFocused()
+
+  // On a phone the table scrolls sideways, and the keyboard can scroll it.
+  await page.setViewportSize({ width: 390, height: 844 })
+  await table.focus()
+  await expect(table).toBeFocused()
+  const before = await table.evaluate((el) => el.scrollLeft)
+  await page.keyboard.press('ArrowRight')
+  await expect.poll(() => table.evaluate((el) => el.scrollLeft)).toBeGreaterThan(before)
 })

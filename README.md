@@ -226,8 +226,9 @@ and demo data, the backend on port 18080, one API key and the dashboard's produc
 policy) on port 15173. A real browser (Playwright) then refuses a wrong key, generates an ML-KEM-1024 and an ML-DSA-65
 key pair, sees both in the list, and checks that the API key is kept only in memory unless "Remember" is ticked. It
 then generates a third ML-DSA-65 key pair, signs a message and verifies it (a changed message must be refused),
-rotates it, revokes the old one and reads its audit log, all through the dashboard. Any content security policy
-violation fails the test. Next, the Java SDK's sample app generates an ML-KEM-1024 key pair
+rotates it, revokes the old one and reads its audit log, all through the dashboard. axe-core then checks every view
+for accessibility problems at desktop and phone width in both themes, and the keyboard test checks the skip link and
+the sideways-scrolling audit table. Any content security policy violation fails the test. Next, the Java SDK's sample app generates an ML-KEM-1024 key pair
 and agrees on a shared secret through the API, then generates an ML-DSA-65 one, signs a message,
 verifies it and checks that a changed copy is refused. A wrong key must be refused with 401. The script then rotates
 the sample app's ML-KEM key pair, revokes the replacement, checks that the rotated key cannot be rotated again and
