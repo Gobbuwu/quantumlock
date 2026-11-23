@@ -73,8 +73,8 @@ the page never scrolls sideways, down to 320 px. Fonts: Schibsted Grotesk and Ma
 - The page never receives a private key: the API returns only the key ID, algorithm, status, public key and time.
 - Messages, contexts and signatures typed into Sign and Verify stay in the page's memory only. They are never
   stored, logged or put in the address, and they are gone when the form closes.
-- The API key is typed into a password field and kept in memory only. If you tick "Remember until this browser tab
-  is closed", it is also kept in the tab's `sessionStorage`, which the browser deletes when the tab closes. It is
+- The API key is typed into a masked field and kept in memory only. It is not a password field, so the browser
+  does not offer to save it as a login. If you tick "Remember until this browser tab is closed", it is also kept in the tab's `sessionStorage`, which the browser deletes when the tab closes. It is
   never put in `localStorage`, a cookie, the URL, the source code or a committed file.
 - The key travels in the `X-API-Key` header, through Vite's proxy on this computer only.
 - The production build (`npm run build`, then `npm run preview`) is served with a strict content security policy

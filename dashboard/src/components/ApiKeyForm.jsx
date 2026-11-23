@@ -4,8 +4,12 @@ import { describeError } from '../api/client.js'
 
 /**
  * Asks for the team's API key and checks it with the API before showing any keys (task 4.2).
- * The input is a password field, so the key is not shown on screen or offered for autofill. Show reveals it only
- * while the person wants to check what they pasted, and the field hides it again when the form is sent (KAN-34).
+ * The key is masked on screen (KAN-34): Show reveals it only while the person wants to check what they pasted, and
+ * the field hides it again when the form is sent.
+ *
+ * The field is a text field masked with CSS, not a password field (KAN-39). Browsers offer to save whatever is typed
+ * into a password field as a login, whatever autocomplete says, and an API key does not belong in a password
+ * manager. Without a password field there is no login form for them to save.
  */
 export default function ApiKeyForm({ api, keyStore, onAccepted, notice }) {
   const [value, setValue] = useState('')
@@ -54,7 +58,8 @@ export default function ApiKeyForm({ api, keyStore, onAccepted, notice }) {
         <div className="field-row">
           <input
             id="api-key-input"
-            type={visible ? 'text' : 'password'}
+            type="text"
+            className={visible ? undefined : 'masked'}
             name="api-key"
             autoComplete="off"
             autoCapitalize="off"
