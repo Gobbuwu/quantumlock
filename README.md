@@ -18,9 +18,16 @@ Capstone Prototype (INFO34049), group 269_09.
 
 ## Prerequisites
 
-- JDK 21 ([Temurin](https://adoptium.net))
+- Git, to clone the repository ([git-scm.com](https://git-scm.com)), or download the ZIP from GitHub instead
+- JDK 21 or later ([Temurin](https://adoptium.net)). GitHub Actions tests with 21, and the Windows demo also ran on
+  JDK 25 (Nov 23, 2026)
 - PostgreSQL (tested with version 16), with the password of its administrator user `postgres`
-- Node.js 22 for the dashboard ([nodejs.org](https://nodejs.org))
+- Node.js 22 or later for the dashboard ([nodejs.org](https://nodejs.org))
+
+The Windows PostgreSQL installer can leave the database listening on every network interface. QuantumLock itself listens on
+this computer only, but on a laptop that joins other networks, keep the database private too: set
+`listen_addresses = 'localhost'` in `postgresql.conf` (in the PostgreSQL `data` folder) and restart the PostgreSQL
+service, or make sure the firewall blocks port 5432.
 
 Maven does not need to be installed. The Maven Wrapper in `backend/` downloads the right version on the first run:
 type `mvnw` on Windows or `./mvnw` on macOS and Linux wherever you would type `mvn`.
