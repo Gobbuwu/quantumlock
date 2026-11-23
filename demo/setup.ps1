@@ -85,8 +85,8 @@ try {
     $text = "# Written by demo\setup.ps1 on $([DateTime]::UtcNow.ToString('yyyy-MM-dd')). Local secrets: never commit or share this file.$nl" +
         "# MASTER_KEY encrypts every stored private key. Keep a copy somewhere safe: without it they cannot be used.$nl" +
         "DB_URL=$dbUrl${nl}DB_USERNAME=$DbName${nl}DB_PASSWORD=$dbPassword${nl}MASTER_KEY=$masterKey$nl"
-    $wroteEnv = $true
     New-SecretFile $EnvFile $text
+    $wroteEnv = $true
     Write-Host 'Written, readable by you only.'
 
     Step 'Build the backend and issue the first API key'

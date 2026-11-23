@@ -182,23 +182,52 @@ function Test-DbOrUserExists([string]$Psql, [string]$Name) {
     return (($out -join '').Trim() -ne '')
 }
 
-# Creates a file only the current user can read, then writes the text into it (UTF-8 without a byte order mark,
-# which the backend expects).
+# Creates a new file that only the current user can read and writes the text into it (UTF-8 without a byte order
+# mark, which the backend expects). The restriction is part of creating the file, so there is no moment in which
+# another account could open it (KAN-37). An existing file is never overwritten. If writing fails, the new file is
+# removed again.
 function New-SecretFile([string]$Path, [string]$Text) {
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent $Path) | Out-Null
-    New-Item -ItemType File -Path $Path | Out-Null
+    $stream = Open-NewSecretFile $Path
+    try {
+        $bytes = (New-Object Text.UTF8Encoding $false).GetBytes($Text)
+        $stream.Write($bytes, 0, $bytes.Length)
+        $stream.Dispose()
+        $stream = $null
+    }
+    catch {
+        $stream.Dispose()
+        Remove-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
+        throw
+    }
+}
+
+# Opens a new, empty file for writing that only the current user can access from the moment it exists.
+function Open-NewSecretFile([string]$Path) {
     if ($OnWindows) {
+        # Only the current user, and no permissions inherited from the folder.
         $acl = New-Object Security.AccessControl.FileSecurity
         $acl.SetAccessRuleProtection($true, $false)
         $me = [Security.Principal.WindowsIdentity]::GetCurrent().User
         $acl.AddAccessRule((New-Object Security.AccessControl.FileSystemAccessRule($me, 'FullControl', 'Allow')))
-        Set-Acl -LiteralPath $Path -AclObject $acl
+        $mode = [IO.FileMode]::CreateNew
+        $rights = [Security.AccessControl.FileSystemRights]::Write
+        $share = [IO.FileShare]::None
+        $options = [IO.FileOptions]::None
+        if ($PSVersionTable.PSEdition -eq 'Desktop') {
+            # Windows PowerShell 5.1 (.NET Framework): this FileStream constructor applies the ACL as it creates the file.
+            return New-Object IO.FileStream($Path, $mode, $rights, $share, 4096, $options, $acl)
+        }
+        # PowerShell 7 (.NET): the same, through FileSystemAclExtensions.
+        return [IO.FileSystemAclExtensions]::Create((New-Object IO.FileInfo $Path), $mode, $rights, $share, 4096, $options, $acl)
     }
-    else {
-        & chmod 600 $Path
-        if ($LASTEXITCODE -ne 0) { Fail "Could not restrict $Path to you." }
-    }
-    [IO.File]::WriteAllText($Path, $Text, (New-Object Text.UTF8Encoding $false))
+    # Linux and macOS (PowerShell 7.4 or later): created with mode 600. The umask can only remove permissions.
+    $fileOptions = New-Object IO.FileStreamOptions
+    $fileOptions.Mode = [IO.FileMode]::CreateNew
+    $fileOptions.Access = [IO.FileAccess]::Write
+    $fileOptions.Share = [IO.FileShare]::None
+    $fileOptions.UnixCreateMode = [IO.UnixFileMode]'UserRead, UserWrite'
+    return New-Object IO.FileStream($Path, $fileOptions)
 }
 
 function Show-LogTail([string]$Path) {
