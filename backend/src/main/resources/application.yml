@@ -17,6 +17,13 @@ spring:
     # No default on purpose. The app refuses to start until you set DB_PASSWORD yourself,
     # so a well-known password can never end up protecting the key store.
     password: ${DB_PASSWORD}
+  jackson:
+    # A number field takes a JSON number only, and a whole one where the API wants whole days: "7", 7.5 and
+    # true are refused with 400 instead of being quietly turned into 7.
+    mapper:
+      allow-coercion-of-scalars: false
+    deserialization:
+      accept-float-as-int: false
   jpa:
     hibernate:
       ddl-auto: none
@@ -60,6 +67,11 @@ quantumlock:
   # the app refuses to start without it. Keep it out of git and keep a copy: if it is lost, every stored
   # private key is lost with it. See backend/.env.example for how to create one.
   master-key: ${MASTER_KEY}
+  rotation:
+    # Days a rotated key pair can still decapsulate and verify when the caller does not say (KAN-30),
+    # and the most a caller may ask for. 0 ends the old key pair's use at once.
+    default-grace-period-days: ${ROTATION_GRACE_DAYS:7}
+    max-grace-period-days: ${ROTATION_MAX_GRACE_DAYS:90}
   security:
     # Host names the API answers to (comma separated). Requests with any other Host header get 400.
     allowed-hosts: ${ALLOWED_HOSTS:localhost,127.0.0.1}

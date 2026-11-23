@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# End-to-end test of QuantumLock on a fresh setup (KAN-20, KAN-24, KAN-25, KAN-29).
+# End-to-end test of QuantumLock on a fresh setup (KAN-20, KAN-24, KAN-25, KAN-29, KAN-30).
 #
 # Builds everything from nothing: a new PostgreSQL database and user, the schema and demo data, the backend,
 # one API key and the dashboard. A real browser then uses the dashboard (dashboard/e2e/), the Java SDK's sample app
@@ -142,14 +142,38 @@ if [ "$WRONG_STATUS" -ne 1 ] || ! grep -q 'QuantumLock API error 401 unauthorize
 fi
 echo "A wrong API key is refused with 401 and exit code 1"
 
+log "Key rotation and revocation (KAN-30)"
+# On real PostgreSQL, where the row lock and the audit action check matter: the sample app's ML-KEM key pair is
+# rotated with a 1-day grace period, then its replacement is revoked. The API key goes to curl in a file, never on
+# the command line. The database upgrade script must also be safe to run on a database that already has it, twice.
+printf 'X-API-Key: %s\n' "$E2E_API_KEY" >"$WORK/api-key-header"
+api() { # method path [json body]; prints the response body, fails on an HTTP error
+  curl -fsS -X "$1" -H @"$WORK/api-key-header" -H 'Content-Type: application/json' ${3:+--data "$3"} \
+    "http://127.0.0.1:$BACKEND_PORT$2"
+}
+ROTATED="$(api POST "/api/v1/keys/$SAMPLE_KEY_ID/rotate" '{"gracePeriodDays":1}')"
+REPLACEMENT_ID="$(grep -Eo '"keyPairId":"[0-9a-f-]{36}"' <<<"$ROTATED" | grep -Eo '[0-9a-f-]{36}')"
+[ -n "$REPLACEMENT_ID" ] && [ "$REPLACEMENT_ID" != "$SAMPLE_KEY_ID" ] || { echo "Rotation did not return a new key pair" >&2; exit 1; }
+REVOKED="$(api POST "/api/v1/keys/$REPLACEMENT_ID/revoke")"
+grep -q '"status":"revoked"' <<<"$REVOKED" || { echo "Revocation failed" >&2; exit 1; }
+ROTATE_AGAIN="$(curl -sS -o /dev/null -w '%{http_code}' -X POST -H @"$WORK/api-key-header" \
+  "http://127.0.0.1:$BACKEND_PORT/api/v1/keys/$SAMPLE_KEY_ID/rotate")"
+[ "$ROTATE_AGAIN" = 400 ] || { echo "A rotated key pair was rotated again (HTTP $ROTATE_AGAIN)" >&2; exit 1; }
+rm -f "$WORK/api-key-header"
+for _ in 1 2; do
+  PGPASSWORD="$DB_PASSWORD" psql -X -q -v ON_ERROR_STOP=1 -U "$APP_PGUSER" -f "$ROOT/database/upgrades/001-revoke-action.sql"
+done
+echo "Rotated $SAMPLE_KEY_ID into $REPLACEMENT_ID and revoked the replacement"
+
 log "Database check"
-# Expected after the browser test and the sample app: two ML-KEM-1024 key pairs and two ML-DSA-65 key pairs for the demo
-# team, each private key stored only encrypted (format version byte 1, and the PKCS#8 algorithm identifier of either
-# algorithm nowhere in the stored bytes), one successful "generate" audit entry per key pair, one successful
-# "encapsulate" and one "decapsulate" entry for the sample app's ML-KEM key pair, and one successful "sign" and two
-# successful "verify" entries for its ML-DSA key pair (a "no" answer is still a successful check).
+# Expected after the browser test, the sample app and the rotation: three ML-KEM-1024 key pairs and two ML-DSA-65 key
+# pairs for the demo team, each private key stored only encrypted (format version byte 1, and the PKCS#8 algorithm
+# identifier of either algorithm nowhere in the stored bytes), one successful "generate" audit entry per key pair, one
+# successful "encapsulate" and one "decapsulate" entry for the sample app's ML-KEM key pair, one successful "sign" and
+# two successful "verify" entries for its ML-DSA key pair (a "no" answer is still a successful check), the rotated key
+# pair pointing at its revoked replacement, and one successful and one refused "rotate" entry plus one "revoke" entry.
 RESULT="$(PGPASSWORD="$DB_PASSWORD" psql -X -tA -U "$APP_PGUSER" -v ON_ERROR_STOP=1 -v sample="$SAMPLE_KEY_ID" \
-  -v signing="$SIGNING_KEY_ID" <<'SQL'
+  -v signing="$SIGNING_KEY_ID" -v replacement="$REPLACEMENT_ID" <<'SQL'
 SELECT
   (SELECT count(*) FROM key_pairs),
   (SELECT string_agg(algorithm, ',' ORDER BY algorithm) FROM key_pairs),
@@ -166,11 +190,16 @@ SELECT
   (SELECT count(*) FROM audit_logs
      WHERE key_pair_id = :'signing'::uuid AND action = 'sign' AND status = 'success'),
   (SELECT count(*) FROM audit_logs
-     WHERE key_pair_id = :'signing'::uuid AND action = 'verify' AND status = 'success')
+     WHERE key_pair_id = :'signing'::uuid AND action = 'verify' AND status = 'success'),
+  (SELECT status || ',' || (replaced_by = :'replacement'::uuid) || ',' || (grace_period_ends_at - rotated_at)
+     FROM key_pairs WHERE key_pair_id = :'sample'::uuid),
+  (SELECT status FROM key_pairs WHERE key_pair_id = :'replacement'::uuid),
+  (SELECT string_agg(action || ':' || status, ',' ORDER BY action, status) FROM audit_logs
+     WHERE key_pair_id IN (:'sample'::uuid, :'replacement'::uuid) AND action IN ('rotate', 'revoke'))
 SQL
 )"
-EXPECTED="4|ML-DSA-65,ML-DSA-65,ML-KEM-1024,ML-KEM-1024|4|4|1|1|1|2"
-echo "key pairs | algorithms | stored encrypted | generate audit rows | sample encapsulate | sample decapsulate | sample sign | sample verify"
+EXPECTED="5|ML-DSA-65,ML-DSA-65,ML-KEM-1024,ML-KEM-1024,ML-KEM-1024|5|5|1|1|1|2|rotated,true,1 day|revoked|revoke:success,rotate:failure,rotate:success"
+echo "key pairs | algorithms | stored encrypted | generate audit rows | sample encapsulate | sample decapsulate | sample sign | sample verify | rotated | replacement | rotate and revoke audit rows"
 echo "$RESULT"
 if [ "$RESULT" != "$EXPECTED" ]; then
   echo "Database check failed. Expected $EXPECTED" >&2

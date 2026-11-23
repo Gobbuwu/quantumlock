@@ -441,6 +441,108 @@ class QuantumLockClientTest {
         assertThat(e.errorCode()).isEqualTo("wrong_key_type");
     }
 
+    // ---- Rotation and revocation -------------------------------------------------------------------
+
+    static final UUID NEW_ID = UUID.fromString("7d2e9a40-5b1c-4f3e-8a6d-2c0b9e1f4a77");
+
+    @Test
+    void rotateSendsTheGracePeriodAndReturnsTheNewKeyPair() throws Exception {
+        api.respond(201, keyPairJson(NEW_ID, "ML-KEM-1024", "active"));
+
+        KeyPairInfo replacement = client.rotate(ID, 3);
+
+        FakeApi.Request request = api.onlyRequest();
+        assertThat(request.method()).isEqualTo("POST");
+        assertThat(request.path()).isEqualTo("/api/v1/keys/" + ID + "/rotate");
+        assertThat(request.header("X-api-key")).isEqualTo(API_KEY);
+        assertThat(request.body()).isEqualTo("{\"gracePeriodDays\":3}");
+        assertThat(replacement.keyPairId()).isEqualTo(NEW_ID);
+        assertThat(replacement.status()).isEqualTo(KeyStatus.ACTIVE);
+        assertThat(replacement.replacedBy()).isEmpty();
+        assertThat(replacement.rotatedAt()).isEmpty();
+        assertThat(replacement.gracePeriodEndsAt()).isEmpty();
+    }
+
+    @Test
+    void rotateWithoutAGracePeriodLeavesItToTheServer() {
+        api.respond(201, keyPairJson(NEW_ID, "ML-DSA-65", "active"));
+        client.rotate(ID);
+        assertThat(api.onlyRequest().body()).isEqualTo("{}");
+    }
+
+    @Test
+    void aRotatedKeyPairShowsItsReplacementAndGracePeriod() {
+        api.respond(200, rotatedKeyPairJson(ID, "\"2026-11-23T08:00:00Z\"", "\"2026-11-30T08:00:00Z\"",
+                "\"" + NEW_ID + "\""));
+
+        KeyPairInfo keyPair = client.getKeyPair(ID);
+
+        assertThat(keyPair.status()).isEqualTo(KeyStatus.ROTATED);
+        assertThat(keyPair.rotatedAt()).contains(Instant.parse("2026-11-23T08:00:00Z"));
+        assertThat(keyPair.gracePeriodEndsAt()).contains(Instant.parse("2026-11-30T08:00:00Z"));
+        assertThat(keyPair.replacedBy()).contains(NEW_ID);
+        assertThat(keyPair.toString()).contains("replacedBy=" + NEW_ID);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"\"yesterday\"", "7", "true"})
+    void aBadRotationTimeIsRefused(String value) {
+        api.respond(200, rotatedKeyPairJson(ID, value, "null", "null"));
+        assertThatThrownBy(() -> client.getKeyPair(ID)).isInstanceOf(QuantumLockResponseException.class)
+                .hasMessage("response field rotatedAt " + ("7".equals(value) || "true".equals(value)
+                        ? "is missing" : "is not a time"));
+    }
+
+    @Test
+    void aBadReplacementIdIsRefused() {
+        api.respond(200, rotatedKeyPairJson(ID, "null", "null", "\"1-2-3-4-5\""));
+        assertThatThrownBy(() -> client.getKeyPair(ID)).isInstanceOf(QuantumLockResponseException.class)
+                .hasMessage("response field replacedBy is not an id");
+    }
+
+    @ParameterizedTest
+    @CsvSource({"0b5c1f64-3f4e-4c1a-9a51-6d2b8f0c7e11,active", "7d2e9a40-5b1c-4f3e-8a6d-2c0b9e1f4a77,rotated"})
+    void aRotationAnswerThatIsNotANewActiveKeyPairIsRefused(String id, String status) {
+        api.respond(201, keyPairJson(UUID.fromString(id), "ML-KEM-1024", status));
+        assertThatThrownBy(() -> client.rotate(ID)).isInstanceOf(QuantumLockResponseException.class);
+    }
+
+    @Test
+    void revokeReturnsTheRevokedKeyPair() {
+        api.respond(200, keyPairJson(ID, "ML-KEM-1024", "revoked"));
+
+        assertThat(client.revoke(ID).status()).isEqualTo(KeyStatus.REVOKED);
+
+        FakeApi.Request request = api.onlyRequest();
+        assertThat(request.method()).isEqualTo("POST");
+        assertThat(request.path()).isEqualTo("/api/v1/keys/" + ID + "/revoke");
+        assertThat(request.body()).isEmpty();
+    }
+
+    @Test
+    void aRevocationAnswerForAnotherKeyOrStatusIsRefused() {
+        api.respond(200, keyPairJson(NEW_ID, "ML-KEM-1024", "revoked"));
+        assertThatThrownBy(() -> client.revoke(ID)).isInstanceOf(QuantumLockResponseException.class);
+        api.respond(200, keyPairJson(ID, "ML-KEM-1024", "active"));
+        assertThatThrownBy(() -> client.revoke(ID)).isInstanceOf(QuantumLockResponseException.class);
+    }
+
+    @Test
+    void badRotationInputsAreRefusedWithoutCallingTheApi() {
+        assertThatThrownBy(() -> client.rotate(null)).isInstanceOf(NullPointerException.class);
+        assertThatThrownBy(() -> client.rotate(ID, -1)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> client.revoke(null)).isInstanceOf(NullPointerException.class);
+        assertThat(api.requests()).isEmpty();
+    }
+
+    @Test
+    void rotationErrorsBecomeTypedExceptions() {
+        api.respond(400, "{\"error\":\"key_not_active\"}");
+        QuantumLockApiException e = catchThrowableOfType(QuantumLockApiException.class, () -> client.rotate(ID));
+        assertThat(e.status()).isEqualTo(400);
+        assertThat(e.errorCode()).isEqualTo("key_not_active");
+    }
+
     // ---- Nothing secret is shown -----------------------------------------------------------------
 
     @Test
@@ -459,6 +561,12 @@ class QuantumLockClientTest {
     static String keyPairJson(UUID id, String algorithm, String status) {
         return "{\"keyPairId\":\"" + id + "\",\"algorithm\":\"" + algorithm + "\",\"status\":\"" + status
                 + "\",\"publicKey\":\"" + b64(PUBLIC_KEY) + "\",\"createdAt\":\"2026-11-22T10:15:30.123456Z\"}";
+    }
+
+    static String rotatedKeyPairJson(UUID id, String rotatedAt, String gracePeriodEndsAt, String replacedBy) {
+        return "{\"keyPairId\":\"" + id + "\",\"algorithm\":\"ML-KEM-1024\",\"status\":\"rotated\",\"publicKey\":\""
+                + b64(PUBLIC_KEY) + "\",\"createdAt\":\"2026-11-22T10:15:30.123456Z\",\"rotatedAt\":" + rotatedAt
+                + ",\"gracePeriodEndsAt\":" + gracePeriodEndsAt + ",\"replacedBy\":" + replacedBy + "}";
     }
 
     static String encapsulateJson(UUID id, byte[] ciphertext, byte[] secret) {

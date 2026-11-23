@@ -93,3 +93,17 @@ repeated for the new code. Line numbers above refer to commit 017a5f4: the share
 | Keys are parsed with the ML-DSA-65 key factory only | Pass | `KeyFactory.getInstance("ML-DSA-65", ...)` in `SignatureService` |
 | Inputs are decoded strictly and their sizes checked before Bouncy Castle sees them | Pass | `StrictBase64` (standard alphabet, no line breaks, one spelling per value). `SignatureApiTest.badSignRequestsGetOneFixedAnswer` and `badVerifyRequestsGetOneFixedAnswer` |
 | The implementation matches FIPS 204 | Pass | 70 NIST ACVP vectors for ML-DSA-65 (key generation, deterministic and hedged signing, verification) run through the application's code in `MlDsa65KnownAnswerTest`, plus a check that an independent Bouncy Castle verifier accepts the API's signatures (`SignatureApiTest`) |
+
+## Addendum: key rotation and revocation (KAN-30)
+
+Added Nov 23, 2026. Written with the help of Claude AI.
+
+| Check | Result | Evidence |
+|---|---|---|
+| A rotated key pair can only read old data (decapsulate, verify), and only until its grace period ends. A revoked one can do nothing | Pass | One rule for every operation, `KeyPairAccess.java:72`. Every cell of the state table is tested in `KeyRotationApiTest` |
+| Two status changes of one key pair cannot both win | Pass | The row is locked (`SELECT ... FOR UPDATE`, `KeyPairRepository.java:29`) and the state checked again under the lock (`KeyPairStore.java:42` and `:61`). `KeyRotationApiTest` runs two rotations, and a rotation and a revocation, at the same moment five times each, on H2 and on PostgreSQL 16 |
+| A status change and its audit entry are written together or not at all | Pass | Both happen in one transaction in `KeyPairStore`. A replacement that loses the race is never saved (`twoRotationsAtOnceGiveExactlyOneReplacement` counts the rows) |
+| The replacement's private key is handled like any new one | Pass | Generation is shared with `generate` and the plaintext is wiped in a `finally` block (`KeyService.java:137`) |
+| Another team cannot rotate or revoke a key pair, or learn that it exists | Pass | Same 404 `key_not_found` as for an unknown id, audited without a key pair id (`anotherTeamsKeyLooksLikeAnUnknownKey`) |
+| A grace period cannot be stretched or smuggled in another type | Pass | Whole JSON numbers only, 0 to the configured maximum (at most 3650). The settings are checked at startup (`RotationSettings`) |
+| Existing databases can record revocations | Pass | `database/upgrades/001-revoke-action.sql`, run on a database built from the previous schema and on a current one, twice each: the old one then accepts `revoke`, both still refuse unknown actions. The end-to-end test runs it twice on PostgreSQL |

@@ -143,8 +143,12 @@ class KeyApiTest {
 
         assertFalse(body.toLowerCase().contains("private"), body);
         Map<String, Object> fields = JsonPath.read(body, "$");
-        assertEquals(List.of("algorithm", "createdAt", "keyPairId", "publicKey", "status"),
-                fields.keySet().stream().sorted().toList());
+        assertEquals(List.of("algorithm", "createdAt", "gracePeriodEndsAt", "keyPairId", "publicKey", "replacedBy",
+                "rotatedAt", "status"), fields.keySet().stream().sorted().toList());
+        // Only rotation fills these in.
+        assertEquals(null, fields.get("rotatedAt"));
+        assertEquals(null, fields.get("gracePeriodEndsAt"));
+        assertEquals(null, fields.get("replacedBy"));
     }
 
     @Test
