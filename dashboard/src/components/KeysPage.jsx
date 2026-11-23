@@ -11,8 +11,9 @@ export default function KeysPage({ api, onUnauthorized }) {
   const [loadError, setLoadError] = useState(null)
   const [freshId, setFreshId] = useState(null)
 
-  const load = useCallback(async () => {
-    setStatus('loading')
+  // quiet: after a rotation or revocation the list stays on screen while it reloads, so the open row stays open.
+  const load = useCallback(async ({ quiet = false } = {}) => {
+    if (!quiet) setStatus('loading')
     try {
       setKeys(await api.listKeys())
       setStatus('ready')
@@ -54,7 +55,7 @@ export default function KeysPage({ api, onUnauthorized }) {
         {status === 'error' && (
           <div className="problem panel-problem" role="alert">
             <p>{loadError}</p>
-            <button type="button" className="button-secondary" onClick={load}>
+            <button type="button" className="button-secondary" onClick={() => load()}>
               Try again
             </button>
           </div>
@@ -65,7 +66,18 @@ export default function KeysPage({ api, onUnauthorized }) {
             <p className="panel-note">No key pairs yet. Choose an algorithm and generate your first one.</p>
           </div>
         )}
-        {status === 'ready' && keys.length > 0 && <KeyTable keys={keys} freshId={freshId} />}
+        {status === 'ready' && keys.length > 0 && (
+          <KeyTable
+            keys={keys}
+            freshId={freshId}
+            api={api}
+            onUnauthorized={onUnauthorized}
+            onChanged={async (replacementId) => {
+              if (replacementId) setFreshId(replacementId)
+              await load({ quiet: true })
+            }}
+          />
+        )}
       </section>
     </>
   )

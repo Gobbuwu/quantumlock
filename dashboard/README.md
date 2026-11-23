@@ -1,6 +1,6 @@
-# Dashboard (tasks 2.3, 4.1 and 4.2)
+# Dashboard (tasks 2.3, 4.1, 4.2 and KAN-33)
 
-React page where a team generates post-quantum key pairs and sees its keys. It follows the Key Management
+React page where a team generates post-quantum key pairs, uses them and reads its audit log. It follows the Key Management
 wireframe in the RRD. Built with Vite, React 19 and Vitest.
 
 ## Run it
@@ -25,10 +25,28 @@ To work on the page without the backend, use made-up data instead:
 npm run dev:mock
 ```
 
+## What it does
+
+Two views, switched in the top bar (the address shows which: `#keys` or `#audit`):
+
+- **Key pairs**: generate a key pair, see the list, and open a key pair with **Show details**. There you can copy
+  its ID and public key, and use the actions its state allows (KAN-33):
+  - **Sign** and **Verify** (ML-DSA-65): the message and the optional context are typed as text and sent as UTF-8.
+    The signature comes back as Base64 with a copy button; Verify says "Valid" or "Not valid".
+  - **Rotate**: a new key pair of the same algorithm, with a grace period of 0 to 90 days (default 7) during which
+    the old one can still verify or decapsulate.
+  - **Revoke**: asks once more ("Revoke for good"), since it cannot be undone.
+  - **View audit log** opens the audit log for that key pair only.
+
+  A rotated key pair offers only Verify (until its grace period ends) and Revoke; a revoked one offers nothing.
+  The API checks the same rules, so a stale page can still be refused, and the page then says why.
+- **Audit log**: every key operation of the team, newest first, with filters for action and result, **Load older**
+  for older entries (25 at a time) and **Refresh**.
+
 ## Test and build
 
 ```bash
-npm test          # Vitest: the API client, the key list and the generate form
+npm test          # Vitest, 88 tests: the API client, the key list, the key actions and the audit log
 npm run build     # production files in dist/
 npm run preview   # serves dist/ on http://127.0.0.1:4173 with the content security policy
 ```
@@ -53,6 +71,8 @@ the page never scrolls sideways, down to 320 px. Fonts: Schibsted Grotesk and Ma
 ## Security notes
 
 - The page never receives a private key: the API returns only the key ID, algorithm, status, public key and time.
+- Messages, contexts and signatures typed into Sign and Verify stay in the page's memory only. They are never
+  stored, logged or put in the address, and they are gone when the form closes.
 - The API key is typed into a password field and kept in memory only. If you tick "Remember until this browser tab
   is closed", it is also kept in the tab's `sessionStorage`, which the browser deletes when the tab closes. It is
   never put in `localStorage`, a cookie, the URL, the source code or a committed file.

@@ -100,11 +100,11 @@ describe('Key pairs page', () => {
     const user = setup(createMockApi({ initialKeys: [KEM_KEY], delayMs: 0 }))
     await screen.findByRole('table')
 
-    await user.click(screen.getByRole('button', { name: 'Show public key' }))
+    await user.click(screen.getByRole('button', { name: 'Show details of 7a2f91c4' }))
 
     expect(screen.getByText(KEM_KEY.keyPairId)).toBeInTheDocument()
     expect(screen.getByRole('textbox', { name: /Public key of 7a2f91c4/ })).toHaveValue(KEM_KEY.publicKey)
-    expect(screen.getByRole('button', { name: 'Hide public key' })).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByRole('button', { name: 'Hide details of 7a2f91c4' })).toHaveAttribute('aria-expanded', 'true')
     expect(document.body.textContent.toLowerCase()).not.toMatch(/private key[^s]/)
   })
 })

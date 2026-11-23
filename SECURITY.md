@@ -196,6 +196,9 @@ Done in task 5.1. Keep these true when the SDK grows:
   test fails on any violation, so a change that breaks the policy is found at once.
 - No API key in the React source or in any committed file. Done in task 4.2: the user types the key in, it is kept
   in memory (or, if they choose, in `sessionStorage` until the tab closes) and sent only in the `X-API-Key` header.
+- Done in KAN-33: what is typed into Sign and Verify stays in component state only, never in storage, the address
+  or a log. Revoking asks for a second, explicit confirmation. The page offers only what a key pair's state allows,
+  but the API's checks stay the rule: the page must never be the only check.
 
 ## Reporting a problem
 

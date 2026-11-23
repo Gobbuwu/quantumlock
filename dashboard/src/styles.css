@@ -843,3 +843,243 @@ table.keys {
     scroll-behavior: auto !important;
   }
 }
+
+/* Views (KAN-33): key pairs and audit log, switched in the top bar. */
+
+.views {
+  display: flex;
+  gap: 4px;
+  margin-right: auto;
+  margin-left: 24px;
+}
+.views a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 6px 12px;
+  font-size: 0.9375rem;
+  color: var(--muted);
+  text-decoration: none;
+  border-radius: 6px;
+}
+.views a[aria-current='page'] {
+  color: var(--ink);
+  background: var(--raised);
+}
+
+.page-wide {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* Key pair actions */
+
+.key-actions {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+.key-actions > .detail-hint {
+  margin: 0 0 12px;
+}
+
+.action-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.action-tab[aria-pressed='true'] {
+  color: var(--on-primary);
+  background: var(--primary);
+  border-color: var(--primary);
+}
+.action-danger {
+  color: var(--problem-ink);
+}
+.action-tabs .button-link {
+  margin-left: auto;
+}
+
+.action-form {
+  margin-top: 16px;
+  max-width: 40rem;
+}
+.action-form .field {
+  margin: 0 0 14px;
+}
+.action-form .field textarea,
+.action-form .field input {
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 12px;
+  font: 0.9375rem/1.5 var(--sans);
+  color: var(--ink);
+  background: var(--ground);
+  border: 1px solid var(--field);
+  border-radius: 8px;
+  resize: vertical;
+}
+.action-form .field textarea.mono,
+.action-result textarea {
+  font: 0.75rem/1.6 var(--mono);
+  word-break: break-all;
+}
+.action-result textarea {
+  display: block;
+  width: 100%;
+  margin: 8px 0 0;
+  padding: 10px 12px;
+  color: var(--muted);
+  background: var(--ground);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  resize: vertical;
+}
+.action-form .field-narrow input {
+  max-width: 8rem;
+}
+.field-hint {
+  font-size: 0.8125rem;
+  font-weight: 400;
+  color: var(--muted);
+}
+.action-result {
+  margin-top: 16px;
+}
+.action-result > p {
+  margin: 0;
+  font-size: 0.9375rem;
+}
+
+.verdict {
+  margin: 16px 0 0;
+  padding: 12px 14px;
+  font-size: 0.9375rem;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+}
+.verdict::before {
+  content: '';
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 10px;
+  border-radius: 50%;
+  vertical-align: 0.1em;
+}
+.verdict-valid::before {
+  background: var(--ok);
+}
+.verdict-invalid {
+  color: var(--problem-ink);
+  background: var(--problem-wash);
+  border-color: transparent;
+}
+.verdict-invalid::before {
+  background: var(--bad);
+}
+
+.revoke-confirm p {
+  margin: 0;
+  font-size: 0.9375rem;
+}
+.revoke-confirm code {
+  font-family: var(--mono);
+  font-size: 0.8125rem;
+}
+.button-danger {
+  min-height: 36px;
+  padding: 6px 14px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--ground);
+  background: var(--bad);
+  border: 0;
+  border-radius: 6px;
+}
+.button-danger:disabled {
+  cursor: progress;
+  color: var(--ink);
+  background: var(--control);
+}
+
+/* Audit log */
+
+.audit {
+  overflow: hidden;
+}
+.audit .panel-head {
+  align-items: center;
+}
+.audit-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 12px 16px;
+  padding: 0 20px 18px;
+}
+.filter {
+  display: grid;
+  gap: 6px;
+  font-size: 0.8125rem;
+  color: var(--muted);
+}
+.filter select {
+  min-height: 40px;
+  padding: 6px 10px;
+  font: inherit;
+  font-size: 0.9375rem;
+  color: var(--ink);
+  background: var(--ground);
+  border: 1px solid var(--field);
+  border-radius: 8px;
+}
+.filter-chip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  min-height: 40px;
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+.filter-chip code {
+  font-family: var(--mono);
+  font-size: 0.8125rem;
+  color: var(--ink);
+}
+.audit-action {
+  font-family: var(--mono);
+  font-size: 0.8125rem;
+}
+.audit-table .key-ident {
+  gap: 10px;
+}
+.audit-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 20px;
+  border-top: 1px solid var(--line-soft);
+}
+
+@media (max-width: 40rem) {
+  /* The views move to their own line under the brand, so the top bar never overflows. */
+  .topbar-inner {
+    flex-wrap: wrap;
+    padding-bottom: 8px;
+  }
+  .views {
+    order: 3;
+    width: 100%;
+    margin: 0;
+  }
+  .views a {
+    padding-inline: 8px;
+  }
+  .action-tabs .button-link {
+    margin-left: 0;
+  }
+}

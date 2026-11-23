@@ -183,8 +183,8 @@ done
 echo "Rotated $SAMPLE_KEY_ID into $REPLACEMENT_ID and revoked the replacement"
 
 log "Database check"
-# Expected after the browser test, the sample app and the rotation: three ML-KEM-1024 key pairs and two ML-DSA-65 key
-# pairs for the demo team, each private key stored only encrypted (format version byte 1, and the PKCS#8 algorithm
+# Expected after the browser test, the sample app and the rotation: three ML-KEM-1024 key pairs and four ML-DSA-65 key
+# pairs for the demo team (the browser rotates one of its own and revokes the old one), each private key stored only encrypted (format version byte 1, and the PKCS#8 algorithm
 # identifier of either algorithm nowhere in the stored bytes), one successful "generate" audit entry per key pair, one
 # successful "encapsulate" and one "decapsulate" entry for the sample app's ML-KEM key pair, one successful "sign" and
 # two successful "verify" entries for its ML-DSA key pair (a "no" answer is still a successful check), the rotated key
@@ -217,7 +217,7 @@ SELECT
   (SELECT string_agg(log_id::text, ',' ORDER BY created_at DESC, log_id DESC) FROM audit_logs) = :'audit_ids'
 SQL
 )"
-EXPECTED="5|ML-DSA-65,ML-DSA-65,ML-KEM-1024,ML-KEM-1024,ML-KEM-1024|5|5|1|1|1|2|rotated,true,1 day|revoked|revoke:success,rotate:failure,rotate:success|t"
+EXPECTED="7|ML-DSA-65,ML-DSA-65,ML-DSA-65,ML-DSA-65,ML-KEM-1024,ML-KEM-1024,ML-KEM-1024|7|7|1|1|1|2|rotated,true,1 day|revoked|revoke:success,rotate:failure,rotate:success|t"
 echo "key pairs | algorithms | stored encrypted | generate audit rows | sample encapsulate | sample decapsulate | sample sign | sample verify | rotated | replacement | rotate and revoke audit rows | audit log API matches"
 echo "$RESULT"
 if [ "$RESULT" != "$EXPECTED" ]; then

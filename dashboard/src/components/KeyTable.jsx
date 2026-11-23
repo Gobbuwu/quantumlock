@@ -1,5 +1,6 @@
 import { Fragment, useState } from 'react'
 import { ALGORITHMS } from './algorithms.js'
+import KeyActions from './KeyActions.jsx'
 import { formatDate, shortId } from './format.js'
 import LatticeGlyph, { glyphTone } from './LatticeGlyph.jsx'
 
@@ -7,7 +8,7 @@ const STATUS_LABEL = { active: 'Active', rotated: 'Rotated', revoked: 'Revoked' 
 const USE = Object.fromEntries(ALGORITHMS.map((option) => [option.name, option.use]))
 
 /** freshId: the key pair generated a moment ago, whose glyph plays its one-time settle animation. */
-export default function KeyTable({ keys, freshId = null }) {
+export default function KeyTable({ keys, freshId = null, api, onChanged, onUnauthorized }) {
   const [openId, setOpenId] = useState(null)
 
   return (
@@ -20,14 +21,14 @@ export default function KeyTable({ keys, freshId = null }) {
           <th scope="col">Status</th>
           <th scope="col">Created</th>
           <th scope="col">
-            <span className="visually-hidden">Public key</span>
+            <span className="visually-hidden">Details</span>
           </th>
         </tr>
       </thead>
       <tbody>
         {keys.map((key) => {
           const open = openId === key.keyPairId
-          const panelId = `public-key-${key.keyPairId}`
+          const panelId = `key-detail-${key.keyPairId}`
           return (
             <Fragment key={key.keyPairId}>
               <tr className={open ? 'key-row is-open' : 'key-row'}>
@@ -57,16 +58,17 @@ export default function KeyTable({ keys, freshId = null }) {
                     className="button-link"
                     aria-expanded={open}
                     aria-controls={panelId}
+                    aria-label={`${open ? 'Hide' : 'Show'} details of ${shortId(key.keyPairId)}`}
                     onClick={() => setOpenId(open ? null : key.keyPairId)}
                   >
-                    {open ? 'Hide public key' : 'Show public key'}
+                    {open ? 'Hide details' : 'Show details'}
                   </button>
                 </td>
               </tr>
               {open && (
                 <tr className="detail-row">
                   <td colSpan={5} id={panelId}>
-                    <KeyDetail keyPair={key} />
+                    <KeyDetail keyPair={key} api={api} onChanged={onChanged} onUnauthorized={onUnauthorized} />
                   </td>
                 </tr>
               )}
@@ -79,7 +81,7 @@ export default function KeyTable({ keys, freshId = null }) {
   )
 }
 
-function KeyDetail({ keyPair }) {
+function KeyDetail({ keyPair, api, onChanged, onUnauthorized }) {
   const [copied, setCopied] = useState(null)
 
   async function copy(label, text) {
@@ -126,6 +128,7 @@ function KeyDetail({ keyPair }) {
             {copied === 'failed' && 'The browser blocked copying. Select the text and copy it instead.'}
           </span>
         </div>
+        {api && <KeyActions api={api} keyPair={keyPair} onChanged={onChanged} onUnauthorized={onUnauthorized} />}
       </div>
     </div>
   )
