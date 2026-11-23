@@ -340,6 +340,47 @@ public final class QuantumLockClient implements AutoCloseable {
         }
     }
 
+    /** The newest {@value AuditLogQuery#DEFAULT_LIMIT} rows of the team's audit log. */
+    public AuditLogPage auditLog() {
+        return auditLog(AuditLogQuery.newest());
+    }
+
+    /**
+     * One page of the team's audit log, newest first. For the next page, call again with
+     * {@code query.before(page.nextBefore().get())} while {@code nextBefore()} is present.
+     */
+    public AuditLogPage auditLog(AuditLogQuery query) {
+        Objects.requireNonNull(query, "query");
+        JsonNode page = call("GET", "/api/v1/audit-logs?" + query.toQueryString(), null, 200);
+        JsonNode list = page.get("entries");
+        if (!page.isObject() || list == null || !list.isArray()) {
+            throw new QuantumLockResponseException("response is not an audit log page");
+        }
+        if (list.size() > query.limit()) {
+            throw new QuantumLockResponseException("response has more entries than asked for");
+        }
+        List<AuditLogEntry> entries = new ArrayList<>(list.size());
+        for (JsonNode item : list) {
+            AuditLogEntry entry = auditLogEntry(item);
+            // Rows that do not match the filters mean the answer is not for this query.
+            if (query.keyPairId().isPresent() && !query.keyPairId().equals(entry.keyPairId())
+                    || query.action().isPresent() && !query.action().get().equals(entry.action())
+                    || query.success().isPresent() && query.success().get() != entry.success()) {
+                throw new QuantumLockResponseException("response has entries that do not match the query");
+            }
+            entries.add(entry);
+        }
+        String nextBefore = null;
+        if (!optional(page, "nextBefore")) {
+            nextBefore = text(page, "nextBefore");
+            // The cursor is always the id of the page's last row, so a page that is not full has none.
+            if (entries.size() != query.limit() || !nextBefore.equals(entries.get(entries.size() - 1).id())) {
+                throw new QuantumLockResponseException("response field nextBefore is not the last entry");
+            }
+        }
+        return new AuditLogPage(entries, nextBefore);
+    }
+
     // ---- JSON ---------------------------------------------------------------------------------------
 
     /** Parses a response body. The parser's error is dropped: it can quote parts of the body. */
@@ -365,6 +406,27 @@ public final class QuantumLockClient implements AutoCloseable {
                 optional(node, "rotatedAt") ? null : time(node, "rotatedAt"),
                 optional(node, "gracePeriodEndsAt") ? null : time(node, "gracePeriodEndsAt"),
                 optional(node, "replacedBy") ? null : uuid(node, "replacedBy"));
+    }
+
+    private static AuditLogEntry auditLogEntry(JsonNode node) {
+        if (!node.isObject()) {
+            throw new QuantumLockResponseException("audit log entry is not a JSON object");
+        }
+        String id = text(node, "id");
+        String action = text(node, "action");
+        String status = text(node, "status");
+        if (!AuditLogQuery.CURSOR.matcher(id).matches()) {
+            throw new QuantumLockResponseException("response field id is not an audit log id");
+        }
+        if (!AuditLogQuery.ACTION.matcher(action).matches()) {
+            throw new QuantumLockResponseException("response field action is not an action");
+        }
+        if (!status.equals("success") && !status.equals("failure")) {
+            throw new QuantumLockResponseException("response field status is not success or failure");
+        }
+        return new AuditLogEntry(id, time(node, "time"), action, status.equals("success"),
+                optional(node, "keyPairId") ? null : uuid(node, "keyPairId"),
+                optional(node, "apiKeyId") ? null : uuid(node, "apiKeyId"));
     }
 
     /** True when the field is missing or null, which an older server or an active key pair gives. */

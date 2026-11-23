@@ -125,3 +125,19 @@ limiting" known limits in SECURITY.md.
 
 Accepted limits are listed in SECURITY.md: counts are in memory and per backend, fixed windows allow up to twice
 the limit across the turn of a minute, and behind a reverse proxy the proxy must limit per address.
+
+## Addendum: audit log API (KAN-32)
+
+Added Nov 23, 2026, when the audit log API was added. Written with the help of Claude AI.
+
+| Check | Result | Evidence |
+|---|---|---|
+| A team sees only its own rows, and cannot learn whether another team's key pair or row exists | Pass | Every query and the cursor lookup include the account id (`AuditLogService.page`, `cursorTime`). `AuditLogApiTest.anotherTeamsRowsKeyPairsAndCursorsGiveNothingAway` |
+| Paging never repeats or skips a row | Pass | Keyset paging on (time, id) instead of offsets. `AuditLogApiTest` pages with limits 1 to 100 over equal times, and while new rows arrive. The end-to-end test compares every API page with the table on PostgreSQL |
+| Bad parameters are refused without echoing them | Pass | Strict patterns in `AuditLogQuery.parse`, one fixed 400 `invalid_request`. 23 bad values tested, plus a script tag in `action` |
+| The query cannot be abused for heavy reads | Pass | At most 101 rows per query, with the cursor in the index condition (checked with `EXPLAIN` on 200,000 rows: index scan on `idx_audit_logs_account_time`). Requests are rate limited (KAN-31) |
+| The log cannot be changed or flooded through the API | Pass | Only `GET` exists (`theLogIsReadOnly`), and reading is not audited (`readingTheLogWritesNothingToIt`) |
+| Nothing sensitive is returned | Pass | Rows hold only ids, the action, the status and the time (`database/schema.sql`) |
+
+Accepted limit, listed in SECURITY.md: row ids are one sequence for all teams, so they show roughly how busy other
+teams are.
