@@ -159,6 +159,9 @@ cd backend
 ./mvnw spring-boot:run "-Dspring-boot.run.arguments=issue-api-key"     # Windows: mvnw spring-boot:run "-Dspring-boot.run.arguments=issue-api-key"
 ```
 
+For another team, add its account id after a space (not a comma):
+`"-Dspring-boot.run.arguments=issue-api-key <account id>"`.
+
 The key (`ql_test_...`) is printed once and only its hash is stored, so copy it somewhere safe and never commit it.
 In Swagger UI click **Authorize** and paste it. With a key you can also create more keys (`POST /api/v1/api-keys`),
 list them (`GET /api/v1/api-keys`) and revoke one (`DELETE /api/v1/api-keys/{apiKeyId}`).

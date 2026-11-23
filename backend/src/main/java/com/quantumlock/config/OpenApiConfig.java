@@ -24,8 +24,8 @@ public class OpenApiConfig {
                 .info(new Info()
                         .title("QuantumLock API")
                         .version("0.1.0")
-                        .description("NIST post-quantum key generation and key exchange (ML-KEM-1024, ML-DSA-65) "
-                                + "for small development teams. Capstone prototype, group 269_09. "
+                        .description("NIST post-quantum cryptography for small development teams: key exchange with "
+                                + "ML-KEM-1024 and signatures with ML-DSA-65, with key rotation, revocation and an audit log. Capstone prototype, group 269_09. "
                                 + "Every endpoint except the health check needs an API key in the "
                                 + ApiKeys.HEADER + " header."))
                 .components(new Components().addSecuritySchemes(API_KEY_SCHEME, new SecurityScheme()

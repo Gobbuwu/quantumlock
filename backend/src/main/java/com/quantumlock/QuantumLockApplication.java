@@ -19,6 +19,10 @@ import org.springframework.context.ConfigurableApplicationContext;
 public class QuantumLockApplication {
 
     public static void main(String[] args) {
+        if (IssueApiKeyCommand.isMistyped(args)) {
+            System.err.println(IssueApiKeyCommand.USAGE);
+            System.exit(2);
+        }
         if (IssueApiKeyCommand.isRequested(args)) {
             int exitCode;
             try (ConfigurableApplicationContext context = new SpringApplicationBuilder(QuantumLockApplication.class)

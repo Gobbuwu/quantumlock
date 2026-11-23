@@ -2,6 +2,7 @@ package com.quantumlock.auth;
 
 import java.io.PrintStream;
 import java.util.Arrays;
+import java.util.Locale;
 import java.util.UUID;
 
 import com.quantumlock.account.AccountRepository;
@@ -10,9 +11,12 @@ import com.quantumlock.account.AccountRepository;
  * One-off command that issues the first API key for a team, before any key exists to call the API with.
  *
  * <pre>
- *   mvnw spring-boot:run -Dspring-boot.run.arguments=issue-api-key
- *   mvnw spring-boot:run -Dspring-boot.run.arguments="issue-api-key,&lt;account id&gt;"
+ *   mvnw spring-boot:run "-Dspring-boot.run.arguments=issue-api-key"
+ *   mvnw spring-boot:run "-Dspring-boot.run.arguments=issue-api-key &lt;account id&gt;"
  * </pre>
+ *
+ * <p>The Maven plugin splits the arguments on spaces, not commas. A first argument that only starts with the
+ * command's name, such as {@code issue-api-key,<id>}, is refused instead of starting the web server (KAN-41).
  *
  * <p>Without an account id it uses the demo team from database/seed.sql. The key is printed once to the
  * console, not through the logger, so it does not end up in log files. Only its hash is stored.
@@ -36,6 +40,21 @@ public final class IssueApiKeyCommand {
         return plain.length > 0 && NAME.equals(plain[0]);
     }
 
+    /**
+     * True when the first argument looks like this command but is not exactly it, for example
+     * {@code issue-api-key,<id>} or {@code Issue-API-Key}. The program then stops with {@link #USAGE} instead of
+     * quietly starting the web server.
+     */
+    public static boolean isMistyped(String[] args) {
+        String[] plain = plainArguments(args);
+        return plain.length > 0 && !NAME.equals(plain[0])
+                && plain[0].toLowerCase(Locale.ROOT).startsWith(NAME);
+    }
+
+    /** Printed for a wrong command line. */
+    public static final String USAGE = "Usage: " + NAME + " [account id], separated by a space, for example "
+            + "\"-Dspring-boot.run.arguments=" + NAME + " <account id>\"";
+
     /** The Spring options ({@code --name=value}), to start the application context with. */
     public static String[] springOptions(String[] args) {
         return Arrays.stream(args).filter(a -> a.startsWith("--")).toArray(String[]::new);
@@ -50,14 +69,14 @@ public final class IssueApiKeyCommand {
             PrintStream err) {
         String[] args = plainArguments(allArgs);
         if (args.length > 2) {
-            err.println("Usage: " + NAME + " [account id]");
+            err.println(USAGE);
             return 2;
         }
         UUID accountId;
         try {
             accountId = args.length == 2 ? UUID.fromString(args[1]) : DEMO_ACCOUNT;
         } catch (IllegalArgumentException e) {
-            err.println("Not an account id. Usage: " + NAME + " [account id]");
+            err.println("Not an account id. " + USAGE);
             return 2;
         }
         if (!accounts.existsById(accountId)) {
