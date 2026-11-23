@@ -28,7 +28,7 @@ export default function GenerateKeyForm({ api, onGenerated, onUnauthorized }) {
   }
 
   return (
-    <form className="generate" onSubmit={handleSubmit} aria-labelledby="generate-title">
+    <form className="panel generate" onSubmit={handleSubmit} aria-labelledby="generate-title">
       <h2 id="generate-title">Generate a key pair</h2>
       <fieldset className="algorithm-choice" disabled={busy}>
         <legend>Algorithm</legend>
@@ -41,21 +41,23 @@ export default function GenerateKeyForm({ api, onGenerated, onUnauthorized }) {
               checked={algorithm === option.name}
               onChange={() => setAlgorithm(option.name)}
             />
-            <span className="algorithm-name">{option.name}</span>
+            <span className="algorithm-name" translate="no">
+              <span className={`swatch swatch-${option.tone}`} aria-hidden="true" />
+              {option.name}
+            </span>
+            <span className="algorithm-standard">{option.standard}</span>
             <span className="algorithm-use">{option.use}</span>
             <span className="algorithm-detail">{option.detail}</span>
           </label>
         ))}
       </fieldset>
-      <div className="generate-actions">
-        <button type="submit" className="button-primary" disabled={busy}>
-          {busy ? 'Generating…' : 'Generate key pair'}
-        </button>
-        <p className="generate-result" role="status" aria-live="polite">
-          {result?.ok &&
-            `Generated ${result.key.algorithm} key pair ${shortId(result.key.keyPairId)}. It is at the top of the list.`}
-        </p>
-      </div>
+      <button type="submit" className="button-primary generate-button" disabled={busy}>
+        {busy ? 'Generating…' : 'Generate key pair'}
+      </button>
+      <p className="generate-result" role="status" aria-live="polite">
+        {result?.ok &&
+          `Generated ${result.key.algorithm} key pair ${shortId(result.key.keyPairId)}. It is at the top of the list.`}
+      </p>
       {result && !result.ok && (
         <p className="problem" role="alert">
           {result.message}
