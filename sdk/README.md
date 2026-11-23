@@ -64,9 +64,17 @@ try (QuantumLockClient quantumLock = QuantumLockClient.builder()
 | `decapsulate(UUID, byte[])` | `POST /api/v1/keys/{id}/decapsulate` | `SharedSecret` |
 | `sign(UUID, byte[] message)` and `sign(UUID, byte[] message, byte[] context)` | `POST /api/v1/keys/{id}/sign` | the 3309-byte ML-DSA-65 signature |
 | `verify(UUID, byte[] message, byte[] signature)` and `verify(..., byte[] context)` | `POST /api/v1/keys/{id}/verify` | `true` or `false` |
+| `rotate(UUID)` and `rotate(UUID, Integer gracePeriodDays)` | `POST /api/v1/keys/{id}/rotate` | the new `KeyPairInfo` |
+| `revoke(UUID)` | `POST /api/v1/keys/{id}/revoke` | the revoked `KeyPairInfo` |
 
 The shared secret is the 32-byte FIPS 203 ML-KEM value K, the same as any FIPS 203 library gives. Use it as a key,
 for example for AES-256-GCM. No private key is ever returned: it stays on the server, stored encrypted.
+
+Rotation replaces a key pair with a new one of the same algorithm. The old one's `status()` becomes `ROTATED`,
+`replacedBy()` names the new one, and until `gracePeriodEndsAt()` it can still decapsulate and verify (data made
+for it before can still be read), but not encapsulate or sign. Leave out the grace period for the server's default
+(7 days unless it is set up otherwise). `revoke` stops a key pair for good and cannot be undone. Using a key pair in
+a state that does not allow the call throws `QuantumLockApiException` with `key_not_active`.
 
 Signatures follow FIPS 204 (ML-DSA-65), so anyone can also check one with the public key and any FIPS 204 library.
 A message is 1 byte to 32 KiB. The optional context string (at most 255 bytes, for example `"invoices"`) ties a
@@ -132,10 +140,10 @@ cd sdk
 ./mvnw verify                                  # Windows: mvnw verify
 ```
 
-126 tests, no backend or database needed:
+139 tests, no backend or database needed:
 
 - `QuantumLockClientTest`: every call against a stand-in API on 127.0.0.1. What is sent (method, path, header,
-  body), every error code, redirects not followed, wrong lengths, other ids, malformed or oversized bodies,
+  body), every error code, rotation and revocation answers, redirects not followed, wrong lengths, other ids, malformed or oversized bodies,
   timeouts, an API that is down, and no key or secret in any `toString`
 - `ClientSettingsTest`: which URLs and keys are accepted, and that a refused value is never repeated
 - `SharedSecretTest`: copies, wiping, constant-time comparison

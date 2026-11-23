@@ -162,6 +162,43 @@ public final class QuantumLockClient implements AutoCloseable {
         }
     }
 
+    /**
+     * Replaces an active key pair with a new one of the same algorithm, using the API's default grace period
+     * (7 days unless the server is set up otherwise). Returns the new key pair.
+     */
+    public KeyPairInfo rotate(UUID keyPairId) {
+        return rotate(keyPairId, null);
+    }
+
+    /**
+     * Replaces an active key pair with a new one of the same algorithm. For {@code gracePeriodDays} (0 to 90
+     * unless the server is set up otherwise) the old one can still decapsulate and verify, so data made for it
+     * before can still be read. Returns the new key pair.
+     */
+    public KeyPairInfo rotate(UUID keyPairId, Integer gracePeriodDays) {
+        Objects.requireNonNull(keyPairId, "keyPairId");
+        if (gracePeriodDays != null && gracePeriodDays < 0) {
+            throw new IllegalArgumentException("gracePeriodDays must not be negative");
+        }
+        String body = gracePeriodDays == null ? "{}" : json.writeValueAsString(Map.of("gracePeriodDays", gracePeriodDays));
+        KeyPairInfo replacement = keyPair(call("POST", "/api/v1/keys/" + keyPairId + "/rotate", body, 201));
+        if (replacement.keyPairId().equals(keyPairId) || replacement.status() != KeyStatus.ACTIVE) {
+            throw new QuantumLockResponseException("response is not a new active key pair");
+        }
+        return replacement;
+    }
+
+    /** Stops an active or rotated key pair for good. It cannot be undone. Returns the revoked key pair. */
+    public KeyPairInfo revoke(UUID keyPairId) {
+        Objects.requireNonNull(keyPairId, "keyPairId");
+        KeyPairInfo revoked = keyPair(call("POST", "/api/v1/keys/" + keyPairId + "/revoke", null, 200));
+        requireSameId(keyPairId, revoked.keyPairId());
+        if (revoked.status() != KeyStatus.REVOKED) {
+            throw new QuantumLockResponseException("response is not a revoked key pair");
+        }
+        return revoked;
+    }
+
     /** Signs a message with the private key of an active ML-DSA-65 key pair, with no context string. */
     public byte[] sign(UUID keyPairId, byte[] message) {
         return sign(keyPairId, message, new byte[0]);
@@ -321,14 +358,25 @@ public final class QuantumLockClient implements AutoCloseable {
         if (!node.isObject()) {
             throw new QuantumLockResponseException("key pair is not a JSON object");
         }
-        Instant createdAt;
-        try {
-            createdAt = OffsetDateTime.parse(text(node, "createdAt")).toInstant();
-        } catch (DateTimeParseException e) {
-            throw new QuantumLockResponseException("response field createdAt is not a time");
-        }
         return new KeyPairInfo(uuid(node, "keyPairId"), Algorithm.fromApiName(text(node, "algorithm")),
-                KeyStatus.fromApiName(text(node, "status")), base64(node, "publicKey"), createdAt);
+                KeyStatus.fromApiName(text(node, "status")), base64(node, "publicKey"), time(node, "createdAt"),
+                optional(node, "rotatedAt") ? null : time(node, "rotatedAt"),
+                optional(node, "gracePeriodEndsAt") ? null : time(node, "gracePeriodEndsAt"),
+                optional(node, "replacedBy") ? null : uuid(node, "replacedBy"));
+    }
+
+    /** True when the field is missing or null, which an older server or an active key pair gives. */
+    private static boolean optional(JsonNode node, String field) {
+        JsonNode value = node.get(field);
+        return value == null || value.isNull();
+    }
+
+    private static Instant time(JsonNode node, String field) {
+        try {
+            return OffsetDateTime.parse(text(node, field)).toInstant();
+        } catch (DateTimeParseException e) {
+            throw new QuantumLockResponseException("response field " + field + " is not a time");
+        }
     }
 
     private static String text(JsonNode node, String field) {

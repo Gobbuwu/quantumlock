@@ -33,23 +33,48 @@ class KeyPairAccess {
         this.auditLogs = auditLogs;
     }
 
-    /** The team's own active key pair of the given algorithm. Every refusal is audited. */
+    /**
+     * The team's own key pair of the given algorithm, in a state that allows the action. Every refusal is audited.
+     */
     KeyPairEntity usableKey(UUID accountId, UUID apiKeyId, UUID keyPairId, Algorithm algorithm, AuditAction action) {
+        KeyPairEntity keyPair = ownKey(accountId, apiKeyId, keyPairId, action);
+        if (!algorithm.displayName().equals(keyPair.getAlgorithm())) {
+            audit(accountId, apiKeyId, keyPairId, action, false);
+            throw new ApiException(HttpStatus.BAD_REQUEST, "wrong_key_type");
+        }
+        if (!allows(keyPair, action)) {
+            throw notActive(accountId, apiKeyId, keyPairId, action);
+        }
+        return keyPair;
+    }
+
+    /** The team's own key pair, whatever its state. A refusal is audited. */
+    KeyPairEntity ownKey(UUID accountId, UUID apiKeyId, UUID keyPairId, AuditAction action) {
         KeyPairEntity keyPair = keyPairs.findByKeyPairIdAndAccountId(keyPairId, accountId).orElse(null);
         if (keyPair == null) {
             // Another team's key and an unknown id look the same. No key id is recorded: it may not exist.
             audit(accountId, apiKeyId, null, action, false);
             throw new ApiException(HttpStatus.NOT_FOUND, "key_not_found");
         }
-        if (!algorithm.displayName().equals(keyPair.getAlgorithm())) {
-            audit(accountId, apiKeyId, keyPairId, action, false);
-            throw new ApiException(HttpStatus.BAD_REQUEST, "wrong_key_type");
-        }
-        if (!KeyPairEntity.STATUS_ACTIVE.equals(keyPair.getStatus())) {
-            audit(accountId, apiKeyId, keyPairId, action, false);
-            throw new ApiException(HttpStatus.BAD_REQUEST, "key_not_active");
-        }
         return keyPair;
+    }
+
+    /** Audits a refusal because of the key pair's state and returns the one fixed answer for it. */
+    ApiException notActive(UUID accountId, UUID apiKeyId, UUID keyPairId, AuditAction action) {
+        audit(accountId, apiKeyId, keyPairId, action, false);
+        return new ApiException(HttpStatus.BAD_REQUEST, "key_not_active");
+    }
+
+    /**
+     * What each state allows (KAN-30): an active key pair everything; a rotated one, until its grace period ends,
+     * only what reads data made for it before (decapsulate, verify); a revoked one nothing.
+     */
+    private boolean allows(KeyPairEntity keyPair, AuditAction action) {
+        if (KeyPairEntity.STATUS_ACTIVE.equals(keyPair.getStatus())) {
+            return true;
+        }
+        boolean readsOldData = action == AuditAction.DECAPSULATE || action == AuditAction.VERIFY;
+        return readsOldData && keyPair.inGracePeriod(clock.instant());
     }
 
     /** Audits a refused input and returns the one fixed answer for it. */
