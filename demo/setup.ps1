@@ -113,8 +113,9 @@ try {
     Write-Host ''
     Write-Host "    $apiKey"
     Write-Host ''
-    $next = 'demo\start.cmd'
-    if ($EnvFile -ne (Join-Path $Root 'backend\.env')) { $next = "demo\start.ps1 -EnvFile `"$EnvFile`"" }
+    $next = 'demo/start.ps1'
+    if ($OnWindows) { $next = 'demo\start.cmd' }
+    if ($EnvFile -ne (Join-Path $Root 'backend\.env')) { $next += " -EnvFile `"$EnvFile`"" }
     Write-Host "Next: run $next, open the dashboard address it prints and paste the key."
 }
 catch {

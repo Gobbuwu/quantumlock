@@ -45,7 +45,8 @@ http://127.0.0.1:4173, paste the API key and generate a key pair. Press Ctrl+C t
 computer only, and the dashboard is the production build with its content security policy.
 
 `demo\remove.cmd` (or `demo/remove.sh`) deletes the database, its user and `backend/.env` again, after you type
-the database name. Every key pair stored in it is lost.
+the database name. Every key pair stored in it is lost. It only removes a database that setup created: the settings
+file must name that database and user, so a database set up by hand (steps 1 to 3) is never touched.
 
 Options, for example to keep a second demo next to your own setup: `-DbName <name>` and `-EnvFile <path>` on
 Windows, `--db-name <name>` and `--env-file <path>` on macOS and Linux. The administrator connection can be changed

@@ -44,7 +44,7 @@ trap cleanup EXIT
 db_exists && fail "$DB already exists"
 
 log "Setup"
-"${SETUP[@]}" >"$WORK/setup.out" 2>&1 || { cat "$WORK/setup.out"; fail "setup exited with $?"; }
+"${SETUP[@]}" >"$WORK/setup.out" 2>&1 || { status=$?; cat "$WORK/setup.out"; fail "setup exited with $status"; }
 API_KEY="$(grep -Eo 'ql_test_[A-Za-z0-9_-]{43}' "$WORK/setup.out" | head -n 1 || true)"
 [ -n "$API_KEY" ] || { cat "$WORK/setup.out"; fail "setup printed no API key"; }
 if [ "${GITHUB_ACTIONS:-}" = "true" ]; then echo "::add-mask::$API_KEY"; fi
@@ -113,6 +113,18 @@ for _ in $(seq 10); do port_open 8080 || port_open 4173 || break; sleep 1; done
 ! port_open 8080 && ! port_open 4173 || fail "the backend or dashboard still runs after Ctrl+C"
 ! grep -rqF -- "$API_KEY" "$WORK/start.out" "$ROOT/demo/.run/" || fail "the API key was written to the output or a log"
 echo "Ctrl+C stopped both and exited with 0."
+
+log "Remove must refuse a database that setup did not create"
+# A settings file written by hand, like the one in the main README, names no database: remove must not drop anything.
+printf 'DB_PASSWORD=x\nMASTER_KEY=y\n' >"$WORK/manual.env"
+case "$FLAVOR" in
+  sh) REFUSE=("$ROOT/demo/remove.sh" --db-name "$DB" --env-file "$WORK/manual.env" --confirm-db-name "$DB") ;;
+  ps1) REFUSE=(pwsh -NoProfile -File "$ROOT/demo/remove.ps1" -DbName "$DB" -EnvFile "$WORK/manual.env" -ConfirmDbName "$DB") ;;
+esac
+if "${REFUSE[@]}" >"$WORK/refuse.out" 2>&1; then fail "remove accepted a settings file that names no database"; fi
+grep -q 'Nothing was removed' "$WORK/refuse.out" || { cat "$WORK/refuse.out"; fail "remove failed for another reason"; }
+db_exists && [ -f "$WORK/manual.env" ] || fail "a refused remove changed something"
+echo "Refused, nothing changed."
 
 log "Remove"
 "${REMOVE[@]}"

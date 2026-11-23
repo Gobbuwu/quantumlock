@@ -4,8 +4,9 @@
 #
 #   demo/remove.sh [--db-name NAME] [--env-file PATH] [--confirm-db-name NAME]
 #
-# Defaults as in setup.sh. It asks you to type the database name, unless --confirm-db-name gives it.
-# The settings file is deleted only when it points at that database.
+# Defaults as in setup.sh. It removes only what setup created: the settings file must exist and name that database
+# and user (DB_URL and DB_USERNAME), so a database set up by hand is never touched. It asks you to type the database
+# name, unless --confirm-db-name gives it.
 
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
@@ -24,9 +25,13 @@ while [ $# -gt 0 ]; do
 done
 check_db_name "$DB_NAME"
 
+[ -f "$ENV_FILE" ] || fail "$ENV_FILE does not exist. Remove only deletes a database that setup created, with its settings file. Nothing was removed."
+grep -Eq "^DB_URL=jdbc:postgresql://[^/]+/$DB_NAME[[:space:]]*\$" "$ENV_FILE" && grep -Eq "^DB_USERNAME=$DB_NAME[[:space:]]*\$" "$ENV_FILE" ||
+  fail "$ENV_FILE does not point at the database and user $DB_NAME, so setup did not create them together. Nothing was removed."
+
 connect_admin
 if [ -z "$CONFIRM" ]; then
-  echo "This deletes the database $DB_NAME, its user and every key pair stored in it."
+  echo "This deletes the database $DB_NAME, its user, every key pair stored in it and $ENV_FILE."
   read -r -p "Type the database name to confirm: " CONFIRM
 fi
 [ "$CONFIRM" = "$DB_NAME" ] || fail "The name did not match. Nothing was removed."
@@ -40,12 +45,5 @@ SQL
 else
   echo "There is no database or user named $DB_NAME."
 fi
-
-if [ -f "$ENV_FILE" ]; then
-  if grep -Eq "^DB_URL=jdbc:postgresql://[^/]+/$DB_NAME[[:space:]]*\$" "$ENV_FILE"; then
-    rm -f "$ENV_FILE"
-    echo "Deleted $ENV_FILE."
-  else
-    echo "Kept $ENV_FILE: it does not point at the database $DB_NAME."
-  fi
-fi
+rm -f "$ENV_FILE"
+echo "Deleted $ENV_FILE."
