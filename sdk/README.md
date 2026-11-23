@@ -128,6 +128,10 @@ cd sdk
 
 GitHub Actions runs them on every change to `sdk/` (`.github/workflows/sdk-ci.yml`).
 
+The end-to-end test (`e2e/run.sh`, KAN-25) also runs the sample app against a real backend and PostgreSQL on every
+pull request, checks that both shared secrets match, that a wrong key is refused with 401 and that the key never
+appears in the output, and then checks the key pair and its audit rows in the database.
+
 ## Not included yet
 
 - Encapsulating on the caller's own computer (it would need Bouncy Castle in every application).
