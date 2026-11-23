@@ -211,13 +211,15 @@ The Java SDK in `sdk/` has its own tests and CI. See [sdk/README.md](sdk/README.
 `e2e/run.sh` starts everything from nothing: a new database and user (both named `quantumlock_e2e`), the schema
 and demo data, the backend on port 18080, one API key and the dashboard's production build (with its content security
 policy) on port 15173. A real browser (Playwright) then refuses a wrong key, generates an ML-KEM-1024 and an ML-DSA-65
-key pair, sees both in the list, and checks that the API key is kept only in memory unless "Remember" is ticked. Any
-content security policy violation fails the test. Next, the Java SDK's sample app generates a third key pair
-(ML-KEM-1024) and agrees on a shared secret through the API, then generates a fourth (ML-DSA-65), signs a message,
+key pair, sees both in the list, and checks that the API key is kept only in memory unless "Remember" is ticked. It
+then generates a third ML-DSA-65 key pair, signs a message and verifies it (a changed message must be refused),
+rotates it, revokes the old one and reads its audit log, all through the dashboard. Any content security policy
+violation fails the test. Next, the Java SDK's sample app generates an ML-KEM-1024 key pair
+and agrees on a shared secret through the API, then generates an ML-DSA-65 one, signs a message,
 verifies it and checks that a changed copy is refused. A wrong key must be refused with 401. The script then rotates
 the sample app's ML-KEM key pair, revokes the replacement, checks that the rotated key cannot be rotated again and
 runs the database upgrade script twice. It reads the whole audit log through the API, 7 rows a page, and one
-filtered page. Last, it checks in the database that all five private keys are stored
+filtered page. Last, it checks in the database that all seven private keys are stored
 encrypted, that the rotated key pair points to its replacement with a 1-day grace period, and that every generate,
 encapsulate, decapsulate, sign, verify, rotate and revoke call was audited, and that the audit log API returned
 every row exactly once, newest first. The database password, `MASTER_KEY` and API key are random for every run and never

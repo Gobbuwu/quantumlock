@@ -116,3 +116,62 @@ test('"Remember" keeps the key for the tab, and "Forget API key" removes it', as
   await page.reload()
   await expect(page.getByRole('heading', { name: 'Enter your API key' })).toBeVisible()
 })
+
+test('sign, verify, rotate and revoke an ML-DSA-65 key pair, then read its audit log (KAN-33)', async ({ page }) => {
+  await page.goto('/')
+  await enterKey(page, apiKey)
+  await expect(rows(page)).toHaveCount(2)
+  await page.getByRole('radio', { name: /ML-DSA-65/ }).check()
+  await page.getByRole('button', { name: 'Generate key pair' }).click()
+  await expect(rows(page)).toHaveCount(3)
+  const shortId = (await rows(page).nth(0).locator('code.key-id').textContent()).trim()
+  await page.getByRole('button', { name: `Show details of ${shortId}` }).click()
+  const actions = page.getByRole('group', { name: `Actions for ${shortId}` })
+
+  // Sign, then verify the signature through the real API: the same message is valid, a changed one is not.
+  await actions.getByRole('button', { name: 'Sign' }).click()
+  const signForm = page.getByRole('form', { name: 'Sign a message' })
+  await signForm.getByLabel('Message').fill('Invoice 2026-118: 42.00 €')
+  await signForm.getByLabel('Context (optional)').fill('invoices')
+  await signForm.getByRole('button', { name: 'Sign message' }).click()
+  const signature = await signForm.getByRole('textbox', { name: 'Signature' }).inputValue()
+  expect(Buffer.from(signature, 'base64')).toHaveLength(3309)
+
+  await actions.getByRole('button', { name: 'Verify' }).click()
+  const verifyForm = page.getByRole('form', { name: 'Verify a signature' })
+  await verifyForm.getByLabel('Message').fill('Invoice 2026-118: 42.00 €')
+  await verifyForm.getByLabel('Context (optional)').fill('invoices')
+  await verifyForm.getByLabel('Signature').fill(signature)
+  await verifyForm.getByRole('button', { name: 'Verify signature' }).click()
+  await expect(verifyForm.getByText(/^Valid\./)).toBeVisible()
+  await verifyForm.getByLabel('Message').fill('Invoice 2026-118: 4200.00 €')
+  await verifyForm.getByRole('button', { name: 'Verify signature' }).click()
+  await expect(verifyForm.getByText(/^Not valid\./)).toBeVisible()
+
+  // Rotate with a 1-day grace period: a new active key pair on top, the old one rotated and still able to verify.
+  await actions.getByRole('button', { name: 'Rotate' }).click()
+  await page.getByLabel('Grace period in days').fill('1')
+  await page.getByRole('button', { name: 'Rotate key pair' }).click()
+  await expect(rows(page)).toHaveCount(4)
+  await expect(rows(page).nth(0)).toContainText('Active')
+  await expect(rows(page).filter({ hasText: shortId })).toContainText('Rotated')
+  await expect(actions.getByRole('button', { name: 'Verify' })).toBeVisible()
+  await expect(actions.getByRole('button', { name: 'Sign' })).toHaveCount(0)
+
+  // Revoke the old one, after the second confirmation.
+  await actions.getByRole('button', { name: 'Revoke' }).click()
+  await page.getByRole('button', { name: 'Revoke for good' }).click()
+  await expect(rows(page).filter({ hasText: shortId })).toContainText('Revoked')
+
+  // Its audit log, newest first: revoke, rotate, the two verify checks, sign and generate.
+  await page.getByRole('link', { name: 'View audit log' }).click()
+  await expect(page.getByRole('heading', { name: 'Audit log', level: 1 })).toBeVisible()
+  const auditRows = page.locator('table.audit-table tbody tr')
+  await expect(auditRows).toHaveCount(6)
+  await expect(auditRows.locator('td.audit-action')).toHaveText(['revoke', 'rotate', 'verify', 'verify', 'sign', 'generate'])
+  await page.getByLabel('Action').selectOption('verify')
+  await expect(auditRows).toHaveCount(2)
+  await expect(auditRows.first()).toContainText('Success') // "not valid" is still a successful check
+  expect(page.url()).not.toContain('Invoice')
+  expect(await page.evaluate(() => [localStorage.length, sessionStorage.length])).toEqual([0, 0])
+})

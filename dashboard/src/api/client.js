@@ -53,9 +53,31 @@ export function createApi(fetchImpl = (...args) => fetch(...args), baseUrl = '/a
     return data
   }
 
+  const key = (id) => `/keys/${encodeURIComponent(id)}`
+
   return {
     listKeys: () => request('/keys'),
     generateKey: (algorithm) => request('/keys/generate', { method: 'POST', body: { algorithm } }),
+    // message, signature and context are Base64. An empty context is left out, which the API treats the same.
+    sign: (id, message, context) =>
+      request(`${key(id)}/sign`, { method: 'POST', body: context ? { message, context } : { message } }),
+    verify: (id, message, signature, context) =>
+      request(`${key(id)}/verify`, {
+        method: 'POST',
+        body: context ? { message, signature, context } : { message, signature },
+      }),
+    rotateKey: (id, gracePeriodDays) => request(`${key(id)}/rotate`, { method: 'POST', body: { gracePeriodDays } }),
+    revokeKey: (id) => request(`${key(id)}/revoke`, { method: 'POST' }),
+    auditLog: ({ keyPairId, action, status, before, limit } = {}) => {
+      const query = new URLSearchParams()
+      if (limit) query.set('limit', String(limit))
+      if (keyPairId) query.set('keyPairId', keyPairId)
+      if (action) query.set('action', action)
+      if (status) query.set('status', status)
+      if (before) query.set('before', before)
+      const text = query.toString()
+      return request(text ? `/audit-logs?${text}` : '/audit-logs')
+    },
   }
 }
 
@@ -81,8 +103,18 @@ export function describeError(error) {
       const when = wait ? `in ${wait} second${wait === 1 ? '' : 's'}` : 'in a minute'
       return `Too many requests in the last minute. Nothing was done. Try again ${when}.`
     }
+    case 'key_not_active':
+      return 'This key pair no longer allows that. A rotated key pair can only verify until its grace period ends, and a revoked one nothing. Reload the list to see its state.'
+    case 'wrong_key_type':
+      return 'This key pair has the wrong algorithm for that. Signing and verifying need an ML-DSA-65 key pair.'
+    case 'key_not_found':
+      return 'The API has no such key pair for your team. Reload the list.'
+    case 'operation_failed':
+      return 'The server could not complete that, and nothing was changed. Try again.'
+    case 'payload_too_large':
+      return 'That is too much data for one request. Messages can be up to 32 KiB.'
     case 'invalid_request':
-      return 'The API rejected the request as incomplete. Reload the page and try again.'
+      return 'The API refused the request as malformed. Check the values you entered and try again.'
     default:
       return `The API returned an error (${error?.code ?? 'unknown'}).`
   }

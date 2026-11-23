@@ -1,10 +1,45 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import ApiKeyForm from './components/ApiKeyForm.jsx'
+import AuditPage from './components/AuditPage.jsx'
 import KeysPage from './components/KeysPage.jsx'
 import LatticeGlyph from './components/LatticeGlyph.jsx'
 
 // The logo mark: a fixed lattice glyph, the same picture as public/favicon.svg.
 const MARK_ID = '7f3a9c21-0000-4000-8000-5a5a5a5a5a5a'
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+
+/** The view in the address: #keys (default), #audit or #audit?keyPair=<id>. Anything else is the key list. */
+export function parseView(hash) {
+  const [path, query = ''] = hash.replace(/^#/, '').split('?')
+  if (path !== 'audit') return { view: 'keys', keyPairId: null }
+  const keyPairId = new URLSearchParams(query).get('keyPair')
+  return { view: 'audit', keyPairId: keyPairId && UUID.test(keyPairId) ? keyPairId : null }
+}
+
+function useView() {
+  const [view, setView] = useState(() => parseView(window.location.hash))
+  useEffect(() => {
+    const update = () => {
+      setView(parseView(window.location.hash))
+      window.scrollTo(0, 0)
+    }
+    window.addEventListener('hashchange', update)
+    return () => window.removeEventListener('hashchange', update)
+  }, [])
+  return view
+}
+
+const TITLES = {
+  keys: {
+    title: 'Key pairs',
+    lede: 'Generate post-quantum key pairs for your team, sign and verify, rotate and revoke. Private keys stay encrypted on the server and are never shown here.',
+  },
+  audit: {
+    title: 'Audit log',
+    lede: 'Every key operation of your team, newest first: who did what to which key pair, and whether it worked. The log holds no messages or secrets.',
+  },
+}
 
 const REVOKED_NOTICE = 'The API no longer accepts this key. It may have been revoked. Enter another key.'
 
@@ -15,6 +50,8 @@ export default function App({ api, keyStore = null, mock = import.meta.env.VITE_
   const needsKey = keyStore !== null
   const [hasKey, setHasKey] = useState(() => !needsKey || keyStore.get() !== null)
   const [notice, setNotice] = useState(null)
+  const { view, keyPairId } = useView()
+  const signedIn = !needsKey || hasKey
 
   const forgetKey = useCallback(
     (message = null) => {
@@ -36,6 +73,16 @@ export default function App({ api, keyStore = null, mock = import.meta.env.VITE_
             <LatticeGlyph id={MARK_ID} tone="mark" size={32} />
             QuantumLock
           </span>
+          {signedIn && (
+            <nav className="views" aria-label="Views">
+              <a href="#keys" aria-current={view === 'keys' ? 'page' : undefined}>
+                Key pairs
+              </a>
+              <a href="#audit" aria-current={view === 'audit' ? 'page' : undefined}>
+                Audit log
+              </a>
+            </nav>
+          )}
           {needsKey && hasKey && (
             <button type="button" className="button-secondary topbar-action" onClick={() => forgetKey()}>
               Forget API key
@@ -44,15 +91,12 @@ export default function App({ api, keyStore = null, mock = import.meta.env.VITE_
         </div>
       </header>
       <div className="wrap page-title">
-        <h1>Key pairs</h1>
-        <p className="lede">
-          Generate post-quantum key pairs for your team. Private keys stay encrypted on the server and are never
-          shown here.
-        </p>
+        <h1>{TITLES[view].title}</h1>
+        <p className="lede">{TITLES[view].lede}</p>
         {mock && <p className="mock-notice">Mock mode: this page shows made-up keys and does not call the API.</p>}
       </div>
-      <main id="main" className={needsKey && !hasKey ? 'wrap page page-single' : 'wrap page'}>
-        {needsKey && !hasKey ? (
+      <main id="main" className={!signedIn ? 'wrap page page-single' : view === 'audit' ? 'wrap page page-wide' : 'wrap page'}>
+        {!signedIn ? (
           <ApiKeyForm
             api={api}
             keyStore={keyStore}
@@ -63,7 +107,11 @@ export default function App({ api, keyStore = null, mock = import.meta.env.VITE_
             }}
           />
         ) : (
-          <KeysPage api={api} onUnauthorized={needsKey ? keyRejected : undefined} />
+          view === 'audit' ? (
+            <AuditPage api={api} keyPairId={keyPairId} onUnauthorized={needsKey ? keyRejected : undefined} />
+          ) : (
+            <KeysPage api={api} onUnauthorized={needsKey ? keyRejected : undefined} />
+          )
         )}
       </main>
     </>
