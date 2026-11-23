@@ -155,3 +155,39 @@ describe('Audit log page', () => {
     expect(bodyRows()).toHaveLength(1)
   })
 })
+
+describe('keyboard and landmarks (KAN-38)', () => {
+  it('"Skip to content" moves focus into the page and keeps the Audit log open', async () => {
+    const api = createMockApi({ initialKeys: [KEY], delayMs: 0 })
+    const user = show(api)
+    await screen.findByRole('table')
+
+    await user.tab()
+    expect(screen.getByRole('link', { name: 'Skip to content' })).toHaveFocus()
+    await user.keyboard('{Enter}')
+
+    expect(screen.getByRole('main')).toHaveFocus()
+    expect(window.location.hash).toBe('#audit')
+    expect(screen.getByRole('heading', { name: 'Audit log', level: 1 })).toBeInTheDocument()
+    // The next Tab goes to the first control on the page, not back to the top bar.
+    await user.tab()
+    expect(screen.getByRole('button', { name: 'Refresh' })).toHaveFocus()
+  })
+
+  it('lets the keyboard reach the audit table, which scrolls sideways on a narrow screen', async () => {
+    const api = createMockApi({ initialKeys: [KEY], delayMs: 0 })
+    show(api)
+    const frame = await screen.findByRole('region', { name: 'Audit log entries' })
+
+    expect(frame).toHaveAttribute('tabindex', '0')
+    expect(within(frame).getByRole('table')).toBeInTheDocument()
+  })
+
+  it('puts the page title inside the main landmark', async () => {
+    const api = createMockApi({ initialKeys: [KEY], delayMs: 0 })
+    show(api, '#keys')
+
+    const main = screen.getByRole('main')
+    expect(within(main).getByRole('heading', { name: 'Key pairs', level: 1 })).toBeInTheDocument()
+  })
+})

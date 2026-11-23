@@ -119,7 +119,9 @@ export default function AuditPage({ api, keyPairId = null, onUnauthorized }) {
       )}
       {status === 'ready' && entries.length > 0 && (
         <>
-          <div className="table-frame">
+          {/* On a narrow screen the table scrolls sideways. Without links or buttons inside, the frame itself must
+              take keyboard focus so the arrow keys can scroll it (KAN-38, A1, WCAG 2.1.1). */}
+          <div className="table-frame" tabIndex={0} role="region" aria-label="Audit log entries">
             <table className="keys audit-table">
               <thead>
                 <tr>

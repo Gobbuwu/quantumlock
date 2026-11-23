@@ -76,6 +76,11 @@ body {
   top: 1rem;
 }
 
+/* The skip link focuses <main> (KAN-38). Focus moves there for reading, not for typing, so it needs no ring. */
+main:focus {
+  outline: none;
+}
+
 .visually-hidden {
   position: absolute;
   width: 1px;
@@ -416,6 +421,10 @@ label {
   /* Containing block for the visually hidden header text, so it cannot stick out of the panel. */
   position: relative;
   overflow-x: auto;
+}
+/* Drawn inside the frame: the panel around it would cut off an outline drawn outside. */
+.table-frame:focus-visible {
+  outline-offset: -2px;
 }
 
 table.keys {
