@@ -133,6 +133,11 @@ Then open:
     `.env.example`). 0 ends the old key pair's use at once.
   - `POST /api/v1/keys/{keyPairId}/revoke` stops an active or rotated key pair for good. It cannot be undone, and
     the key pair stays in the list, marked `revoked`, for the record.
+  - `GET /api/v1/audit-logs` lists your team's audit log, newest first: every generate, encapsulate, decapsulate,
+    sign, verify, rotate and revoke call, with its time, `success` or `failure`, the key pair and the API key used.
+    Optional filters: `keyPairId`, `action` and `status` (`success` or `failure`). `limit` is 1 to 100 (default 50).
+    When there are older rows the answer has a `nextBefore` value: pass it as `before` to get the next page. The log
+    holds no messages, secrets or key material, and it can only be read, never changed through the API.
   - `POST /api/v1/api-keys`, `GET /api/v1/api-keys` and `DELETE /api/v1/api-keys/{apiKeyId}`
 
 Every endpoint except the health check needs an API key in the `X-API-Key` header. Issue the first key for the
@@ -193,6 +198,9 @@ Tests use an in-memory H2 database, so PostgreSQL does not need to be running. T
 - key rotation and revocation: what each state allows, the grace period and its end, bad grace periods, two
   rotations (or a rotation and a revocation) at the same moment, other teams' keys and the audit log
   (`KeyRotationApiTest`)
+- the audit log API: every field, newest first, paging that never repeats or skips a row (also while new rows
+  arrive and when times are equal), the filters, the limits, other teams' rows and cursors, and every bad
+  parameter (`AuditLogApiTest`)
 
 GitHub Actions runs the same build on every push (`.github/workflows/backend-ci.yml`).
 
@@ -208,9 +216,11 @@ content security policy violation fails the test. Next, the Java SDK's sample ap
 (ML-KEM-1024) and agrees on a shared secret through the API, then generates a fourth (ML-DSA-65), signs a message,
 verifies it and checks that a changed copy is refused. A wrong key must be refused with 401. The script then rotates
 the sample app's ML-KEM key pair, revokes the replacement, checks that the rotated key cannot be rotated again and
-runs the database upgrade script twice. Last, it checks in the database that all five private keys are stored
+runs the database upgrade script twice. It reads the whole audit log through the API, 7 rows a page, and one
+filtered page. Last, it checks in the database that all five private keys are stored
 encrypted, that the rotated key pair points to its replacement with a 1-day grace period, and that every generate,
-encapsulate, decapsulate, sign, verify, rotate and revoke call was audited. The database password, `MASTER_KEY` and API key are random for every run and never
+encapsulate, decapsulate, sign, verify, rotate and revoke call was audited, and that the audit log API returned
+every row exactly once, newest first. The database password, `MASTER_KEY` and API key are random for every run and never
 printed. The script refuses to run if a database or user named `quantumlock_e2e` already exists, and removes both
 at the end.
 

@@ -31,6 +31,7 @@ own computer only (no TLS yet). That is the default and it is enforced by the se
 | A stolen database exposes API keys | Keys are 32 bytes from `SecureRandom`, shown once and stored only as their SHA-256 hash, compared with `MessageDigest.isEqual`. A revoked key stops working on the next request | `ApiKeys`, `api_keys.key_hash` |
 | Bad input crashes or probes the key exchange | Ciphertexts are decoded as strict Base64 and must be exactly 1568 bytes before Bouncy Castle sees them. Keys are loaded with the `ML-KEM-1024` key factory only. Every malformed input gets the same 400 `invalid_request`; a tampered but well-formed ciphertext gets a normal answer with a different secret (FIPS 203 implicit rejection). Library failures become a fixed 500 `operation_failed`, logged by type only. Every call is audited | `KeyExchangeService` |
 | One team reads another team's keys | Every key lookup includes the account id. Another team's key, an unknown id and a malformed id all get the same 404 | `KeyPairRepository`, `ApiExceptionHandler` |
+| One team reads another team's audit log | Every audit query and cursor lookup includes the account id. Another team's key pair gives an empty page and another team's cursor the same 400 as an unknown one. The log is read only and holds no key material | `AuditLogService`, `AuditLogQuery` |
 | A retired or compromised key pair stays in use | Rotation replaces a key pair: the old one can only decapsulate and verify, and only until its grace period ends (default 7 days, at most 90). Revocation stops a key pair at once and for good. Every operation checks the state first, and a refused one gets 400 `key_not_active` and is audited. Status changes lock the row, so two at the same moment run one after the other | `KeyPairAccess`, `KeyService`, `KeyPairStore` |
 | Loosely typed input changes meaning | Number fields take JSON numbers only and whole ones: `"7"`, `7.5` and `true` are refused with 400, not turned into 7 | `spring.jackson.*` in `application.yml` |
 | An application using the SDK leaks its API key or a shared secret | The Java SDK sends the key in the `X-API-Key` header only, refuses plain `http://` except on the same computer, never follows redirects, times out every call and checks every answer strictly. The key and secrets never appear in `toString()`, exception messages or logs, and `SharedSecret` can be wiped | `sdk/quantumlock-client` |
@@ -75,6 +76,8 @@ Nothing here makes the application impossible to attack. These gaps are known an
   would each count separately. The windows are fixed minutes, so a client can make up to twice the limit across the
   turn of a minute. Behind a reverse proxy every client has the proxy's address: the proxy must then do the
   per-address limiting, or `RATE_LIMIT_FAILED_CHECKS_PER_MINUTE` must be raised.
+- Audit row ids are one sequence for all teams, so the gap between two of a team's ids shows roughly how much
+  other teams did in between. Acceptable on one computer; a hosted service should return opaque ids instead.
 - Creating and revoking API keys is not in the audit log yet: `audit_logs.action` allows only key-pair actions.
 - Anyone who can run the backend on the computer can issue a key with `issue-api-key`. That person can also
   read the database and `.env`, so this gives them nothing new.
@@ -161,6 +164,18 @@ Done in KAN-30. Keep these true:
 - Generate the replacement key before taking the lock, so the lock is held for a few writes only. A replacement that
   loses the race is never saved.
 - Revocation cannot be undone, and revoked rows are kept: the audit log refers to them.
+
+### Audit log API (KAN-32)
+
+Done in KAN-32. Keep these true:
+
+- Every audit query includes the caller's account id. Another team's key pair gives an empty page and another
+  team's cursor the same 400 as a cursor that does not exist, so neither tells whether it exists.
+- The API reads the log only. No endpoint changes or deletes audit rows, and reading the log is not itself audited,
+  so paging cannot fill it.
+- Every query parameter is checked strictly (one spelling per value) and any bad value gets the same 400
+  `invalid_request`, which repeats nothing from the request.
+- Never add messages, signatures, shared secrets or key material to audit rows: the API returns every column.
 
 ### SDK (task 5.1 and later)
 

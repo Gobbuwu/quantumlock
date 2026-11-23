@@ -159,6 +159,23 @@ grep -q '"status":"revoked"' <<<"$REVOKED" || { echo "Revocation failed" >&2; ex
 ROTATE_AGAIN="$(curl -sS -o /dev/null -w '%{http_code}' -X POST -H @"$WORK/api-key-header" \
   "http://127.0.0.1:$BACKEND_PORT/api/v1/keys/$SAMPLE_KEY_ID/rotate")"
 [ "$ROTATE_AGAIN" = 400 ] || { echo "A rotated key pair was rotated again (HTTP $ROTATE_AGAIN)" >&2; exit 1; }
+
+log "Audit log API (KAN-32)"
+# Pages through the whole audit log, 7 rows at a time, and keeps the row ids in order. The database check below
+# compares them with the table itself. Then one filtered page: the two rotate rows of the sample's key pair.
+AUDIT_IDS=""
+CURSOR=""
+for _ in $(seq 1 100); do
+  PAGE="$(api GET "/api/v1/audit-logs?limit=7${CURSOR:+&before=$CURSOR}")"
+  AUDIT_IDS="$AUDIT_IDS$(grep -Eo '"id":"[0-9]+"' <<<"$PAGE" | grep -Eo '[0-9]+' | tr '\n' ',')"
+  CURSOR="$(grep -Eo '"nextBefore":"[0-9]+"' <<<"$PAGE" | grep -Eo '[0-9]+' || true)"
+  [ -n "$CURSOR" ] || break
+done
+AUDIT_IDS="${AUDIT_IDS%,}"
+ROTATE_ROWS="$(api GET "/api/v1/audit-logs?keyPairId=$SAMPLE_KEY_ID&action=rotate" | grep -Eo '"status":"[a-z]+"' | tr '\n' ' ')"
+[ "$ROTATE_ROWS" = '"status":"failure" "status":"success" ' ] ||
+  { echo "Filtered audit log page is wrong: $ROTATE_ROWS" >&2; exit 1; }
+echo "Read $(tr ',' '\n' <<<"$AUDIT_IDS" | grep -c .) audit rows through the API; the rotate filter found the refused and the successful rotation"
 rm -f "$WORK/api-key-header"
 for _ in 1 2; do
   PGPASSWORD="$DB_PASSWORD" psql -X -q -v ON_ERROR_STOP=1 -U "$APP_PGUSER" -f "$ROOT/database/upgrades/001-revoke-action.sql"
@@ -171,9 +188,10 @@ log "Database check"
 # identifier of either algorithm nowhere in the stored bytes), one successful "generate" audit entry per key pair, one
 # successful "encapsulate" and one "decapsulate" entry for the sample app's ML-KEM key pair, one successful "sign" and
 # two successful "verify" entries for its ML-DSA key pair (a "no" answer is still a successful check), the rotated key
-# pair pointing at its revoked replacement, and one successful and one refused "rotate" entry plus one "revoke" entry.
+# pair pointing at its revoked replacement, one successful and one refused "rotate" entry plus one "revoke" entry, and
+# the audit log API having returned every row exactly once, newest first.
 RESULT="$(PGPASSWORD="$DB_PASSWORD" psql -X -tA -U "$APP_PGUSER" -v ON_ERROR_STOP=1 -v sample="$SAMPLE_KEY_ID" \
-  -v signing="$SIGNING_KEY_ID" -v replacement="$REPLACEMENT_ID" <<'SQL'
+  -v signing="$SIGNING_KEY_ID" -v replacement="$REPLACEMENT_ID" -v audit_ids="$AUDIT_IDS" <<'SQL'
 SELECT
   (SELECT count(*) FROM key_pairs),
   (SELECT string_agg(algorithm, ',' ORDER BY algorithm) FROM key_pairs),
@@ -195,11 +213,12 @@ SELECT
      FROM key_pairs WHERE key_pair_id = :'sample'::uuid),
   (SELECT status FROM key_pairs WHERE key_pair_id = :'replacement'::uuid),
   (SELECT string_agg(action || ':' || status, ',' ORDER BY action, status) FROM audit_logs
-     WHERE key_pair_id IN (:'sample'::uuid, :'replacement'::uuid) AND action IN ('rotate', 'revoke'))
+     WHERE key_pair_id IN (:'sample'::uuid, :'replacement'::uuid) AND action IN ('rotate', 'revoke')),
+  (SELECT string_agg(log_id::text, ',' ORDER BY created_at DESC, log_id DESC) FROM audit_logs) = :'audit_ids'
 SQL
 )"
-EXPECTED="5|ML-DSA-65,ML-DSA-65,ML-KEM-1024,ML-KEM-1024,ML-KEM-1024|5|5|1|1|1|2|rotated,true,1 day|revoked|revoke:success,rotate:failure,rotate:success"
-echo "key pairs | algorithms | stored encrypted | generate audit rows | sample encapsulate | sample decapsulate | sample sign | sample verify | rotated | replacement | rotate and revoke audit rows"
+EXPECTED="5|ML-DSA-65,ML-DSA-65,ML-KEM-1024,ML-KEM-1024,ML-KEM-1024|5|5|1|1|1|2|rotated,true,1 day|revoked|revoke:success,rotate:failure,rotate:success|t"
+echo "key pairs | algorithms | stored encrypted | generate audit rows | sample encapsulate | sample decapsulate | sample sign | sample verify | rotated | replacement | rotate and revoke audit rows | audit log API matches"
 echo "$RESULT"
 if [ "$RESULT" != "$EXPECTED" ]; then
   echo "Database check failed. Expected $EXPECTED" >&2
