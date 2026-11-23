@@ -152,7 +152,7 @@ PGHOST=localhost PGUSER=postgres PGPASSWORD=<postgres password> ./e2e/run.sh
 | Component | Version |
 |---|---|
 | Java | 21 |
-| Spring Boot | 4.1.2 |
+| Spring Boot | 4.2.0 |
 | springdoc-openapi | 3.2.0 |
 | Bouncy Castle (bcprov-jdk18on) | 1.87 |
 | PostgreSQL JDBC driver, H2 | managed by Spring Boot |
