@@ -1,6 +1,6 @@
 # QuantumLock Java SDK (KAN-21)
 
-Use QuantumLock from Java or Spring Boot without writing any HTTP or cryptography code. Java 21, Spring Boot 4.1.2.
+Use QuantumLock from Java or Spring Boot without writing any HTTP or cryptography code. Java 21, Spring Boot 4.2.0.
 
 | Module | What it is |
 |---|---|
