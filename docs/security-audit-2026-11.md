@@ -31,7 +31,7 @@ No high or medium security issue was found in the application. Every test suite 
 | 13 | Accessibility | axe-core 4.14.1, three views, desktop and phone width, dark and light | A1, A2 |
 | 14 | Performance | 20 timed calls per operation on a local backend | Median 8 to 10 ms, worst 85 ms (first call) |
 | 15 | Code quality | TODO and debug-print search, file sizes, version freshness | Clean |
-| 16 | Demo dry run | Quang, timed | Moved to when the demo script (KAN-27) exists |
+| 16 | Demo dry run | Quang, informal run of the walkthrough as a demo | Fast, no hiccups; Swagger UI unfamiliar (I4). A timed run follows the demo script (KAN-27) |
 
 ## Findings
 
@@ -72,7 +72,7 @@ The full scan report is kept outside the repository. Summary:
 - **I1.** The demo's "Press any key" pause also appears when `start.cmd` is run from a PowerShell window. Cosmetic.
 - **I2.** Swagger UI is on by default (`API_DOCS_ENABLED=true`). Documented and acceptable on localhost; switch it off before hosting.
 - **I3.** springdoc 3.2.1 is out (pinned 3.2.0). Dependabot will propose it.
-- **I4.** The dashboard has no key exchange buttons; key exchange is available through Swagger UI and the SDK. The Final Design Proposal does not require it in the dashboard. Worth a line in the demo script.
+- **I4.** The dashboard has no key exchange buttons; key exchange is available through Swagger UI and the SDK. The Final Design Proposal does not require it in the dashboard. Quang found Swagger UI unfamiliar in the walkthrough, so the demo script (KAN-27) should either rehearse the Swagger steps or show key exchange through the SDK sample app.
 - **I5.** CI runs on Linux only; Windows is covered by the manual laptop runs in this audit.
 - **I6.** Jira epics KAN-1 to KAN-8 are still To Do although most of their tasks are Done.
 - **I7.** A `ql_try` test database may remain on the laptop from KAN-34 testing.
