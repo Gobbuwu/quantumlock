@@ -667,6 +667,18 @@ table.keys {
   font-weight: 500;
 }
 
+.field-row {
+  display: flex;
+  gap: 8px;
+}
+.field-row input {
+  flex: 1;
+}
+.field-row .button-secondary {
+  min-height: 44px;
+  min-width: 72px;
+}
+
 .field input {
   min-width: 0;
   min-height: 44px;

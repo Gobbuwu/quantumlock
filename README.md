@@ -42,8 +42,12 @@ show QuantumLock on a new computer.
 
 Setup asks for the password of the PostgreSQL user `postgres` once. It then creates the database and user
 `quantumlock` with a random password, loads the tables and demo data, writes `backend/.env` with that password and a
-random `MASTER_KEY`, builds the backend and prints the first API key. The key is shown only this once, so copy it
-somewhere safe. The database password and `MASTER_KEY` are never shown, and `backend/.env` is readable by you only.
+random `MASTER_KEY`, builds the backend and issues the first API key. It shows the key masked
+(`ql_test_...` and its last four characters), so a screenshot of the window does not expose it: press **C** to copy it
+(Windows keeps this copy out of clipboard history), **S** to show it, then **Enter** to finish, which clears the
+clipboard again. The key cannot be shown again later, so keep it somewhere safe. Setup needs a terminal window for
+this; `--show-key` (`-ShowKey` on Windows) prints the key instead, for scripts whose output stays private. The
+database password and `MASTER_KEY` are never shown, and `backend/.env` is readable by you only.
 Setup never overwrites anything: it stops if `backend/.env`, the database or the user already exists. If a step
 fails, it removes what it had created, so it can simply be run again.
 

@@ -1,7 +1,7 @@
 <#
 Sets up QuantumLock for a demo on this computer, once (KAN-26). Double-click setup.cmd, or run:
 
-    demo\setup.ps1 [-DbName NAME] [-EnvFile PATH]
+    demo\setup.ps1 [-DbName NAME] [-EnvFile PATH] [-ShowKey]
 
 Creates the PostgreSQL database and its user with a random password, loads database\schema.sql and seed.sql,
 writes backend\.env with that password and a random MASTER_KEY, builds the backend and issues the first API key
@@ -10,12 +10,15 @@ It refuses to run when the settings file, the database or the user already exist
 anything. If a step fails, everything it created is removed again.
 
 NAME is the database and user name (default quantumlock). PATH is the settings file (default backend\.env).
+The API key is shown masked, with keys to copy or show it, so it does not appear on screen unless you ask. Without a
+terminal setup stops before it changes anything. -ShowKey prints the key instead, for scripts: keep that output private.
 PostgreSQL administrator: PGHOST, PGPORT, PGUSER (defaults localhost, 5432, postgres) and PGPASSWORD,
 which is asked for when it is not set. macOS and Linux: demo/setup.sh does the same.
 #>
 param(
     [string]$DbName = 'quantumlock',
-    [string]$EnvFile = ''
+    [string]$EnvFile = '',
+    [switch]$ShowKey
 )
 . (Join-Path $PSScriptRoot 'common.ps1')
 
@@ -24,6 +27,9 @@ $wroteEnv = $false
 $code = 0
 try {
     Test-DbName $DbName
+    if (-not $ShowKey -and -not (Test-Terminal)) {
+        Fail 'Setup hands over the API key in a terminal window, and this is not one. Run it in a terminal, or add -ShowKey to print the key (then keep the output private). Nothing was changed.'
+    }
     if ($EnvFile) { $EnvFile = Get-FullPath $EnvFile } else { $EnvFile = Join-Path $Root 'backend\.env' }
 
     Step 'Check the tools'
@@ -109,10 +115,8 @@ try {
     Step 'Done'
     Write-Host "The database $DbName and $EnvFile are ready."
     Write-Host ''
-    Write-Host 'API key for the demo team. It is shown only this once: copy it somewhere safe and never commit it.'
-    Write-Host ''
-    Write-Host "    $apiKey"
-    Write-Host ''
+    Send-ApiKey $apiKey $ShowKey.IsPresent
+    $apiKey = $null
     $next = 'demo/start.ps1'
     if ($OnWindows) { $next = 'demo\start.cmd' }
     if ($EnvFile -ne (Join-Path $Root 'backend\.env')) { $next += " -EnvFile `"$EnvFile`"" }
