@@ -41,6 +41,15 @@ The browser only calls `/api/...` on the dashboard's own address. Vite forwards 
 `http://127.0.0.1:8080` (see `vite.config.js`), so the backend needs no CORS setting and both stay on this
 computer. All calls go through `src/api/client.js`. `src/api/mock.js` returns the same shapes with made-up data.
 
+## How it looks (KAN-28)
+
+A dark graphite theme (`src/styles.css`). Colour sits only on the data: each key pair has a small lattice glyph
+drawn from its key ID (`src/components/lattice.js`), blue for ML-KEM, rose for ML-DSA and grey once the key is
+rotated or revoked. The same ID always draws the same glyph, so keys are easy to tell apart. The glyph is not a
+fingerprint and does not verify a key. A key you just generated settles into its glyph once; with reduced motion
+turned on, nothing moves. The key list turns into two-line rows when its panel is narrow (a container query), so
+the page never scrolls sideways, down to 320 px. Fonts: Schibsted Grotesk and Martian Mono, bundled from npm.
+
 ## Security notes
 
 - The page never receives a private key: the API returns only the key ID, algorithm, status, public key and time.

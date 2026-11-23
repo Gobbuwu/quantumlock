@@ -35,7 +35,7 @@ export default function ApiKeyForm({ api, keyStore, onAccepted, notice }) {
   }
 
   return (
-    <form className="api-key" onSubmit={handleSubmit} aria-labelledby="api-key-title">
+    <form className="panel api-key" onSubmit={handleSubmit} aria-labelledby="api-key-title">
       <h2 id="api-key-title">Enter your API key</h2>
       {notice && (
         <p className="problem" role="alert">
