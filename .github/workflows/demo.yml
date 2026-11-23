@@ -3,22 +3,9 @@
 name: Demo scripts
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - "backend/**"
-      - "dashboard/**"
-      - "database/**"
-      - "demo/**"
-      - ".github/workflows/demo.yml"
-  pull_request:
-    paths:
-      - "backend/**"
-      - "dashboard/**"
-      - "database/**"
-      - "demo/**"
-      - ".github/workflows/demo.yml"
+  # Started by ci.yml for every pull request and every push to main, when the files this checks have changed.
+  workflow_call:
+  # Adds a "Run workflow" button on the Actions tab, to start this check by hand.
   workflow_dispatch:
 
 # Least privilege: this workflow only needs to read the code.

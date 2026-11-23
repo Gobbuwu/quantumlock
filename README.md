@@ -218,7 +218,8 @@ Tests use an in-memory H2 database, so PostgreSQL does not need to be running. T
   arrive and when times are equal), the filters, the limits, other teams' rows and cursors, and every bad
   parameter (`AuditLogApiTest`)
 
-GitHub Actions runs the same build on every push (`.github/workflows/backend-ci.yml`).
+GitHub Actions runs the same build on every pull request and every push to main (`.github/workflows/backend-ci.yml`,
+started by `ci.yml`).
 
 The Java SDK in `sdk/` has its own tests and CI. See [sdk/README.md](sdk/README.md#tests).
 
@@ -264,7 +265,9 @@ PGHOST=localhost PGUSER=postgres PGPASSWORD=<postgres password> ./e2e/run.sh
 ## Working together
 
 - Create a branch per Jira task and put the key in its name, for example `KAN-15-key-generation`.
-- Open a pull request into `main`; merge when the Backend CI check passes.
+- Open a pull request into `main`; merge when the `summary` check passes. It is the one check the branch rule
+  requires: `.github/workflows/ci.yml` runs the backend, dashboard, SDK, demo and end-to-end checks that the change
+  needs and passes only when all of them pass.
 - Move the Jira task to Done when it is merged.
 - Read the checklist in [SECURITY.md](SECURITY.md) before building the key and API-key endpoints (tasks 3.2 to 3.4).
 
