@@ -36,6 +36,9 @@ log() { printf '\n== %s\n' "$*"; }
 fail() { echo "FAILED: $*" >&2; exit 1; }
 db_exists() { [ -n "$(psql -X -w -tA -d postgres -c "SELECT 1 FROM pg_database WHERE datname = '$DB' UNION SELECT 1 FROM pg_roles WHERE rolname = '$DB'")" ]; }
 port_open() { (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null; }
+# GNU stat (Linux) takes -c, BSD stat (macOS) takes -f. sha256sum is not on every Mac, openssl is.
+file_mode() { stat -c %a "$1" 2>/dev/null || stat -f %Lp "$1"; }
+file_hash() { openssl dgst -sha256 <"$1"; }
 
 cleanup() {
   local status=$?
@@ -139,15 +142,15 @@ for name in DB_PASSWORD MASTER_KEY; do
   [ -n "$value" ] || fail "$name missing from the settings file"
   ! grep -qF -- "$value" "$WORK/setup.shown" || fail "setup printed $name"
 done
-[ "$(stat -c %a "$ENV_FILE")" = 600 ] || fail "the settings file is readable by others"
+[ "$(file_mode "$ENV_FILE")" = 600 ] || fail "the settings file is readable by others"
 [ "$(head -c 3 "$ENV_FILE" | od -An -tx1 | tr -d ' ')" != efbbbf ] || fail "the settings file starts with a byte order mark"
 db_exists || fail "setup did not create $DB"
 
 log "A second setup must refuse"
-BEFORE="$(sha256sum "$ENV_FILE")"
+BEFORE="$(file_hash "$ENV_FILE")"
 if "${SETUP[@]}" >"$WORK/again.out" 2>&1; then fail "a second setup succeeded"; fi
 grep -q 'already exists' "$WORK/again.out" || { cat "$WORK/again.out"; fail "a second setup failed for another reason"; }
-[ "$BEFORE" = "$(sha256sum "$ENV_FILE")" ] && db_exists || fail "a second setup changed something"
+[ "$BEFORE" = "$(file_hash "$ENV_FILE")" ] && db_exists || fail "a second setup changed something"
 echo "Refused, nothing changed."
 
 log "Start, use the dashboard, press Ctrl+C"

@@ -73,7 +73,7 @@ The full scan report is kept outside the repository. Summary:
 - **I2.** Swagger UI is on by default (`API_DOCS_ENABLED=true`). Documented and acceptable on localhost; switch it off before hosting.
 - **I3.** springdoc 3.2.1 is out (pinned 3.2.0). Dependabot will propose it.
 - **I4.** The dashboard has no key exchange buttons; key exchange is available through Swagger UI and the SDK. The Final Design Proposal does not require it in the dashboard. Quang found Swagger UI unfamiliar in the walkthrough, so the demo script (KAN-27) should either rehearse the Swagger steps or show key exchange through the SDK sample app.
-- **I5.** CI runs on Linux only; Windows is covered by the manual laptop runs in this audit.
+- **I5.** CI runs on Linux only; Windows is covered by the manual laptop runs in this audit. Since KAN-43 (after this audit), CI also runs every check on macOS.
 - **I6.** Jira epics KAN-1 to KAN-8 are still To Do although most of their tasks are Done.
 - **I7.** A `ql_try` test database may remain on the laptop from KAN-34 testing.
 - **I8.** The dashboard cannot create, list or revoke API keys; that is done through Swagger UI or the API. Fine for the capstone, worth adding for a hosted version.
@@ -82,7 +82,7 @@ The full scan report is kept outside the repository. Summary:
 
 - The code scan reads the code; it ran nothing. The black-box run and the walkthrough cover what was executed.
 - osv-scanner and the GitHub advisory database could not be reached from the test machine; npm audit, Dependabot alerts and Maven Central were used instead.
-- Windows 11 (laptop) and Linux were tested. macOS was not.
+- Windows 11 (laptop) and Linux were tested. macOS was not. Since KAN-43 (after this audit), GitHub Actions runs every test suite, the demo scripts and the end-to-end test on macOS too.
 - Test code was not security reviewed, only run.
 
 ## OWASP API Security Top 10 (2023)

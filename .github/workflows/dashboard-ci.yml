@@ -13,7 +13,12 @@ permissions:
 
 jobs:
   dashboard:
-    runs-on: ubuntu-latest
+    # Linux and macOS (KAN-43). macOS runners are free for public repositories.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 10
     defaults:
       run:

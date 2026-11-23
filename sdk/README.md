@@ -179,7 +179,7 @@ cd sdk
 - `QuantumLockAutoConfigurationTest`: the Spring setup, missing or wrong settings, your own client bean
 - `SampleApplicationTest`: the whole sample app, including a mismatch, an accepted changed message and a refused key
 
-GitHub Actions runs them on every change to `sdk/` (`.github/workflows/sdk-ci.yml`).
+GitHub Actions runs them on Linux and macOS on every change to `sdk/` (`.github/workflows/sdk-ci.yml`).
 
 The end-to-end test (`e2e/run.sh`, KAN-25) also runs the sample app against a real backend and PostgreSQL on every
 pull request, checks that both shared secrets match, that the signature is valid and a changed message is refused,

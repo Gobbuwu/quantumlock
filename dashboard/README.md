@@ -51,7 +51,7 @@ npm run build     # production files in dist/
 npm run preview   # serves dist/ on http://127.0.0.1:4173 with the content security policy
 ```
 
-GitHub Actions runs both on every pull request (`.github/workflows/dashboard-ci.yml`).
+GitHub Actions runs both on Linux and macOS on every pull request (`.github/workflows/dashboard-ci.yml`).
 
 ## How it talks to the backend
 

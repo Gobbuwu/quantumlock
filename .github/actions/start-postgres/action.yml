@@ -1,0 +1,62 @@
+# Starts an empty PostgreSQL 16 on this runner for demo.yml and e2e.yml (KAN-43), and sets PGHOST, PGPORT, PGUSER and
+# PGPASSWORD for the steps after it. The superuser password is random for each run and masked in the log. The server
+# listens on this runner only.
+#
+# Linux: PostgreSQL 16.16 in Docker, pinned to the image digest, the version used for development.
+# macOS: GitHub's macOS runners have no Docker, so it comes from Homebrew (postgresql@16, the newest 16.x), as a Mac
+# user would install it. The server is set up here with password checks (scram-sha-256) for every connection, unlike
+# Homebrew's own setup, which trusts every local user, so the scripts are checked with a password as on Linux. PGHOST is
+# localhost, the demo scripts' default.
+name: Start PostgreSQL 16
+description: Starts an empty PostgreSQL 16 for this job and sets the PG* variables.
+runs:
+  using: composite
+  steps:
+    - name: Start PostgreSQL 16 (Docker)
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        set -euo pipefail
+        PGPASSWORD="$(openssl rand -hex 24)"
+        echo "::add-mask::$PGPASSWORD"
+        docker run -d --name postgres -e POSTGRES_PASSWORD="$PGPASSWORD" -p 127.0.0.1:5432:5432 \
+          postgres:16.16@sha256:3950ad7c3148ca2175ef1b6c36c9efbf78957ae8fbe8b3a5d7c35af50500382f
+        for _ in $(seq 60); do
+          docker exec postgres pg_isready -U postgres -q && break
+          sleep 1
+        done
+        docker exec postgres pg_isready -U postgres
+        {
+          echo "PGHOST=127.0.0.1"
+          echo "PGPORT=5432"
+          echo "PGUSER=postgres"
+          echo "PGPASSWORD=$PGPASSWORD"
+        } >> "$GITHUB_ENV"
+
+    - name: Start PostgreSQL 16 (Homebrew)
+      if: runner.os == 'macOS'
+      shell: bash
+      env:
+        HOMEBREW_NO_INSTALL_CLEANUP: "1"
+      run: |
+        set -euo pipefail
+        brew install postgresql@16
+        PG_BIN="$(brew --prefix postgresql@16)/bin"
+        # Ahead of any other psql on the runner.
+        echo "$PG_BIN" >> "$GITHUB_PATH"
+        PGPASSWORD="$(openssl rand -hex 24)"
+        echo "::add-mask::$PGPASSWORD"
+        PGDATA="$RUNNER_TEMP/pgdata"
+        # initdb reads the password from a file that only this user can read, deleted right after.
+        PWFILE="$(mktemp)"
+        chmod 600 "$PWFILE"
+        printf '%s\n' "$PGPASSWORD" >"$PWFILE"
+        "$PG_BIN/initdb" -D "$PGDATA" -U postgres --pwfile="$PWFILE" --auth=scram-sha-256 -E UTF8 --locale=C >/dev/null
+        rm -f "$PWFILE"
+        "$PG_BIN/pg_ctl" -D "$PGDATA" -l "$RUNNER_TEMP/postgres.log" -o "-c listen_addresses=localhost -p 5432" -w start
+        {
+          echo "PGHOST=localhost"
+          echo "PGPORT=5432"
+          echo "PGUSER=postgres"
+          echo "PGPASSWORD=$PGPASSWORD"
+        } >> "$GITHUB_ENV"
