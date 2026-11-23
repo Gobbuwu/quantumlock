@@ -93,3 +93,21 @@ repeated for the new code. Line numbers above refer to commit 017a5f4: the share
 | Keys are parsed with the ML-DSA-65 key factory only | Pass | `KeyFactory.getInstance("ML-DSA-65", ...)` in `SignatureService` |
 | Inputs are decoded strictly and their sizes checked before Bouncy Castle sees them | Pass | `StrictBase64` (standard alphabet, no line breaks, one spelling per value). `SignatureApiTest.badSignRequestsGetOneFixedAnswer` and `badVerifyRequestsGetOneFixedAnswer` |
 | The implementation matches FIPS 204 | Pass | 70 NIST ACVP vectors for ML-DSA-65 (key generation, deterministic and hedged signing, verification) run through the application's code in `MlDsa65KnownAnswerTest`, plus a check that an independent Bouncy Castle verifier accepts the API's signatures (`SignatureApiTest`) |
+
+## Addendum: rate limiting (KAN-31)
+
+Added Nov 23, 2026, when rate limiting was added. Written with the help of Claude AI. It closes the two "no rate
+limiting" known limits in SECURITY.md.
+
+| Check | Result | Evidence |
+|---|---|---|
+| A blocked address is refused before its API key is even looked up, and an over-limit key before any work | Pass | `ApiKeyAuthFilter.java:76` (address) and `:98` (key). `RateLimitTest.aRefusedRequestDoesNoWork` checks that refused calls create no key pair and no audit row |
+| The client address cannot be faked with a header | Pass | Only `getRemoteAddr()` is used (`ApiKeyAuthFilter.java:75`). `RateLimitTest.forwardingHeadersDoNotChangeTheAddress` |
+| A flood of made-up keys or addresses cannot use up memory | Pass | At most 10,000 entries per limiter. When full, unknown ones are refused until windows end (`RateLimiter.roomFor`). `RateLimiterTest` checks the cap |
+| Counting is exact under concurrent calls | Pass | All methods are `synchronized`. `RateLimiterTest` allows exactly 100 of 800 calls from 8 threads |
+| The 429 answer reveals nothing | Pass | Fixed body `{"error":"rate_limited"}`, `Retry-After` in whole seconds, the usual security headers. `RateLimitTest.theAnswerRepeatsNothingFromTheRequest` |
+| Limits cannot be switched off by a bad setting | Pass | Values outside 1 to 1,000,000 stop the backend at startup (`WebSecurityConfig.limiter`). `RateLimitSettingsTest` |
+| The log cannot be flooded | Pass | One warning per address per minute, when it reaches the limit (`ApiKeyAuthFilter.java:93`) |
+
+Accepted limits are listed in SECURITY.md: counts are in memory and per backend, fixed windows allow up to twice
+the limit across the turn of a minute, and behind a reverse proxy the proxy must limit per address.

@@ -28,6 +28,9 @@ import org.slf4j.LoggerFactory;
  *   <li>The key is read from the X-API-Key header only, never from the URL. Exactly one such header.</li>
  *   <li>Every failure (no key, malformed, unknown, revoked, two headers) gets the same 401 and body.</li>
  *   <li>The key is never logged.</li>
+ *   <li>Rate limits (KAN-31): an address with too many failed key checks in a minute gets 429 for every request,
+ *       before any key is checked, so guessing gets no answer at all; a valid key gets 429 once it has made too
+ *       many requests in a minute. The address is the connection's own, never a header the caller could set.</li>
  * </ul>
  *
  * <p>A custom header also stops cross-site requests: a browser will not send it to another site
@@ -46,9 +49,13 @@ public final class ApiKeyAuthFilter implements Filter {
     private static final Pattern API_DOCS_PATH = Pattern.compile("/v3/api-docs(/[A-Za-z0-9._-]+)?");
 
     private final ApiKeyService apiKeys;
+    private final RateLimiter failedChecksPerAddress;
+    private final RateLimiter requestsPerKey;
 
-    public ApiKeyAuthFilter(ApiKeyService apiKeys) {
+    public ApiKeyAuthFilter(ApiKeyService apiKeys, RateLimiter failedChecksPerAddress, RateLimiter requestsPerKey) {
         this.apiKeys = apiKeys;
+        this.failedChecksPerAddress = failedChecksPerAddress;
+        this.requestsPerKey = requestsPerKey;
     }
 
     @Override
@@ -65,6 +72,13 @@ public final class ApiKeyAuthFilter implements Filter {
             return;
         }
 
+        String address = httpRequest.getRemoteAddr();
+        long wait = failedChecksPerAddress.waitSeconds(address);
+        if (wait > 0) {
+            Rejections.tooManyRequests(httpResponse, wait);
+            return;
+        }
+
         Optional<Caller> caller;
         try {
             caller = presentedKey(httpRequest).flatMap(apiKeys::authenticate);
@@ -75,7 +89,15 @@ public final class ApiKeyAuthFilter implements Filter {
             return;
         }
         if (caller.isEmpty()) {
+            if (failedChecksPerAddress.record(address)) {
+                log.warn("Too many failed API key checks from {}: its requests are refused for up to a minute", address);
+            }
             Rejections.write(httpResponse, HttpServletResponse.SC_UNAUTHORIZED, "unauthorized");
+            return;
+        }
+        wait = requestsPerKey.acquire(caller.get().apiKeyId().toString());
+        if (wait > 0) {
+            Rejections.tooManyRequests(httpResponse, wait);
             return;
         }
         request.setAttribute(CALLER_ATTRIBUTE, caller.get());

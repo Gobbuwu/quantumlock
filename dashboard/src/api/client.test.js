@@ -85,4 +85,34 @@ describe('describeError', () => {
     expect(describeError({ code: 'key_generation_failed' })).toMatch(/nothing was saved/)
     expect(describeError({ code: 'something_new' })).toMatch(/something_new/)
   })
+
+  it('says how long to wait when the API is rate limiting', () => {
+    expect(describeError({ code: 'rate_limited', retryAfterSeconds: 42 })).toMatch(/Try again in 42 seconds/)
+    expect(describeError({ code: 'rate_limited', retryAfterSeconds: 1 })).toMatch(/in 1 second\./)
+    expect(describeError({ code: 'rate_limited', retryAfterSeconds: null })).toMatch(/in a minute/)
+  })
+})
+
+describe('rate limiting', () => {
+  it('keeps the Retry-After seconds from a 429', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ error: 'rate_limited' }), { status: 429, headers: { 'Retry-After': '17' } }),
+    )
+    const error = await createApi(fetchImpl).listKeys().catch((e) => e)
+    expect(error).toBeInstanceOf(ApiError)
+    expect(error.status).toBe(429)
+    expect(error.code).toBe('rate_limited')
+    expect(error.retryAfterSeconds).toBe(17)
+  })
+
+  it('ignores a Retry-After that is not whole seconds', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ error: 'rate_limited' }), {
+        status: 429,
+        headers: { 'Retry-After': 'Wed, 21 Oct 2015 07:28:00 GMT' },
+      }),
+    )
+    const error = await createApi(fetchImpl).listKeys().catch((e) => e)
+    expect(error.retryAfterSeconds).toBeNull()
+  })
 })

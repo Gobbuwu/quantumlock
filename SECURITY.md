@@ -8,7 +8,7 @@ This file says what is protected today, what is not protected yet, and the rules
 The backend generates and stores key pairs (task 3.2), with private keys encrypted at rest (task 3.1).
 Every endpoint except the health check and the API documentation needs an API key (task 3.3), and each
 request acts only for the team that owns the key. The backend must still stay reachable from the developer's
-own computer only (no TLS, no rate limiting yet). That is the default and it is enforced by the settings below.
+own computer only (no TLS yet). That is the default and it is enforced by the settings below.
 
 ## What is in place
 
@@ -32,6 +32,7 @@ own computer only (no TLS, no rate limiting yet). That is the default and it is 
 | Bad input crashes or probes the key exchange | Ciphertexts are decoded as strict Base64 and must be exactly 1568 bytes before Bouncy Castle sees them. Keys are loaded with the `ML-KEM-1024` key factory only. Every malformed input gets the same 400 `invalid_request`; a tampered but well-formed ciphertext gets a normal answer with a different secret (FIPS 203 implicit rejection). Library failures become a fixed 500 `operation_failed`, logged by type only. Every call is audited | `KeyExchangeService` |
 | One team reads another team's keys | Every key lookup includes the account id. Another team's key, an unknown id and a malformed id all get the same 404 | `KeyPairRepository`, `ApiExceptionHandler` |
 | An application using the SDK leaks its API key or a shared secret | The Java SDK sends the key in the `X-API-Key` header only, refuses plain `http://` except on the same computer, never follows redirects, times out every call and checks every answer strictly. The key and secrets never appear in `toString()`, exception messages or logs, and `SharedSecret` can be wiped | `sdk/quantumlock-client` |
+| Floods of requests or API-key guessing | Each API key may make 120 requests per minute. A client address that fails the API-key check 20 times in a minute is refused for the rest of that minute, even with a valid key. Both get 429 `rate_limited` with `Retry-After`, before any other work. Counting uses the connection's address only, never a forwarding header. At most 10,000 keys and 10,000 addresses are tracked: when a table is full, new ones are refused until a minute has passed, so a flood cannot use up memory. Both limits are settings (`RATE_LIMIT_PER_MINUTE`, `RATE_LIMIT_FAILED_CHECKS_PER_MINUTE`) | `RateLimiter`, `ApiKeyAuthFilter` |
 | Secrets or keys committed by accident | `.env` files and key files (`*.pem`, `*.key`, `*.p12`, `*.jks`) are ignored by git | `.gitignore` |
 
 ## How it is checked
@@ -53,6 +54,10 @@ own computer only (no TLS, no rate limiting yet). That is the default and it is 
   probes for developer and configuration paths, and checks for leaked versions or stack traces.
 - `SecurityFiltersTest` tests the decisions inside the filters, including a 5 MB body that must be cut off
   after 64 KB plus one byte.
+- `RateLimiterTest` checks the counting with a fake clock: the exact limit, the wait, refused events not counted,
+  the memory cap and exactly 100 allowed out of 800 calls from 8 threads. `RateLimitTest` checks the limits through
+  the API: 429 with `Retry-After`, no work done for a refused request, a blocked address even with a valid key,
+  forwarding headers ignored and the health check never limited.
 - `SecureDefaultsTest` fails the build if someone gives `DB_PASSWORD` a default, opens the listen address
   or switches error details back on.
 - `PostQuantumMisuseTest` feeds Bouncy Castle tampered ciphertexts, malformed and swapped keys, corrupted
@@ -64,15 +69,16 @@ own computer only (no TLS, no rate limiting yet). That is the default and it is 
 
 Nothing here makes the application impossible to attack. These gaps are known and accepted for now:
 
-- **No rate limiting on failed API-key checks.** Guessing a 256-bit key is not practical, but a local program
-  can still send as many attempts as it likes. Needed before the API leaves the computer.
+- **Rate limits live in memory, per backend.** They restart at zero when the backend restarts, and two backends
+  would each count separately. The windows are fixed minutes, so a client can make up to twice the limit across the
+  turn of a minute. Behind a reverse proxy every client has the proxy's address: the proxy must then do the
+  per-address limiting, or `RATE_LIMIT_FAILED_CHECKS_PER_MINUTE` must be raised.
 - Creating and revoking API keys is not in the audit log yet: `audit_logs.action` allows only key-pair actions.
 - Anyone who can run the backend on the computer can issue a key with `issue-api-key`. That person can also
   read the database and `.env`, so this gives them nothing new.
 - **No TLS.** Traffic is plain HTTP, which is acceptable only because it never leaves the computer.
   Encapsulate and decapsulate return the shared secret in the response, so TLS is required before the API
   leaves the computer.
-- **No rate limiting.** A local program can send as many requests as it likes.
 - A client that announces a body and then stays silent occupies one server thread for up to 10 seconds
   (20 seconds if it stalls in the middle of a body). A reverse proxy is the usual protection.
 - Requests that Tomcat itself refuses before they reach the application (malformed HTTP, for example two
@@ -88,7 +94,7 @@ All of these, not some of them:
 2. TLS, directly or through a reverse proxy. Private keys and shared secrets travel in responses.
 3. `SERVER_ADDRESS` and `ALLOWED_HOSTS` set to the real address and host name, nothing wider.
 4. `API_DOCS_ENABLED=false`.
-5. Rate limiting, at least on failed API-key checks.
+5. Rate limiting, at least on failed API-key checks (done in KAN-31, but see the note on reverse proxies above).
 6. A strong, unique database password and a database that is not reachable from outside.
 
 ## Rules for the next tasks
