@@ -14,14 +14,47 @@ Capstone Prototype (INFO34049), group 269_09.
 | `dashboard/` | React dashboard | Frontend / Dashboard | KAN-13 (2.3) |
 | `e2e/` | End-to-end test on a fresh setup | Testing | KAN-24 (6.3) |
 | `sdk/` | Java client, Spring Boot starter and sample app ([sdk/README.md](sdk/README.md)) | Backend / API | KAN-21 (5.1) |
+| `demo/` | Scripts that set up and start the whole demo on one computer | Demo | KAN-26 (7.1) |
 
 ## Prerequisites
 
-- JDK 21
-- PostgreSQL (tested with version 16)
+- JDK 21 ([Temurin](https://adoptium.net))
+- PostgreSQL (tested with version 16), with the password of its administrator user `postgres`
+- Node.js 22 for the dashboard ([nodejs.org](https://nodejs.org))
 
 Maven does not need to be installed. The Maven Wrapper in `backend/` downloads the right version on the first run:
 type `mvnw` on Windows or `./mvnw` on macOS and Linux wherever you would type `mvn`.
+
+## Run the demo
+
+The scripts in `demo/` do steps 1 to 3 below in one go and start the dashboard as well. This is the quickest way to
+show QuantumLock on a new computer.
+
+**Windows:** double-click `demo\setup.cmd` once, then `demo\start.cmd` every time you want to run the demo.
+**macOS and Linux:** run `demo/setup.sh` once, then `demo/start.sh`.
+
+Setup asks for the password of the PostgreSQL user `postgres` once. It then creates the database and user
+`quantumlock` with a random password, loads the tables and demo data, writes `backend/.env` with that password and a
+random `MASTER_KEY`, builds the backend and prints the first API key. The key is shown only this once, so copy it
+somewhere safe. The database password and `MASTER_KEY` are never shown, and `backend/.env` is readable by you only.
+Setup never overwrites anything: it stops if `backend/.env`, the database or the user already exists. If a step
+fails, it removes what it had created, so it can simply be run again.
+
+Start builds the backend and the dashboard when needed, starts both and prints the address. Open
+http://127.0.0.1:4173, paste the API key and generate a key pair. Press Ctrl+C to stop both. On Windows the
+window may then ask "Terminate batch job (Y/N)?": both answers are fine, the demo has already stopped. Both listen on this
+computer only, and the dashboard is the production build with its content security policy.
+
+`demo\remove.cmd` (or `demo/remove.sh`) deletes the database, its user and `backend/.env` again, after you type
+the database name. Every key pair stored in it is lost. It only removes a database that setup created: the settings
+file must name that database and user, so a database set up by hand (steps 1 to 3) is never touched.
+
+Options, for example to keep a second demo next to your own setup: `-DbName <name>` and `-EnvFile <path>` on
+Windows, `--db-name <name>` and `--env-file <path>` on macOS and Linux. The administrator connection can be changed
+with the usual `PGHOST`, `PGPORT`, `PGUSER` and `PGPASSWORD` variables. GitHub Actions runs the scripts on every
+pull request that touches them (`.github/workflows/demo.yml`).
+
+To set things up by hand instead, follow steps 1 to 3.
 
 ## 1. Create the local database (once)
 
