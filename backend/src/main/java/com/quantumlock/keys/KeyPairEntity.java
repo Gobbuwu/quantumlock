@@ -24,6 +24,8 @@ import org.springframework.data.domain.Persistable;
 public class KeyPairEntity implements Persistable<UUID> {
 
     public static final String STATUS_ACTIVE = "active";
+    public static final String STATUS_ROTATED = "rotated";
+    public static final String STATUS_REVOKED = "revoked";
 
     @Id
     @Column(name = "key_pair_id")
@@ -128,5 +130,23 @@ public class KeyPairEntity implements Persistable<UUID> {
 
     public UUID getReplacedBy() {
         return replacedBy;
+    }
+
+    /** Replaced by {@code replacement}; still usable to decapsulate and verify until {@code gracePeriodEndsAt}. */
+    void markRotated(Instant rotatedAt, Instant gracePeriodEndsAt, UUID replacement) {
+        this.status = STATUS_ROTATED;
+        this.rotatedAt = rotatedAt;
+        this.gracePeriodEndsAt = gracePeriodEndsAt;
+        this.replacedBy = replacement;
+    }
+
+    /** Unusable for good. The rotation details, if any, are kept for the record. */
+    void markRevoked() {
+        this.status = STATUS_REVOKED;
+    }
+
+    /** Rotated and the grace period has not ended at {@code now}. */
+    boolean inGracePeriod(Instant now) {
+        return STATUS_ROTATED.equals(status) && gracePeriodEndsAt != null && now.isBefore(gracePeriodEndsAt);
     }
 }

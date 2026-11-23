@@ -17,6 +17,22 @@ psql -h localhost -U quantumlock -d quantumlock -f database/seed.sql
 The backend does not create tables itself (`spring.jpa.hibernate.ddl-auto: none`), so these scripts are the single source of the schema.
 To start over, drop and recreate the database, then run both scripts again.
 
+## Upgrades
+
+A database created from an older `schema.sql` is brought up to date with the scripts in `upgrades/`, in number order.
+Each one is safe to run more than once and changes nothing on a database that already has it. Run them as the
+PostgreSQL admin user (or the database owner):
+
+```
+psql -h localhost -U postgres -d quantumlock -v ON_ERROR_STOP=1 -f database/upgrades/001-revoke-action.sql
+```
+
+| Script | Needed by databases created before | What it does |
+|---|---|---|
+| `001-revoke-action.sql` | Nov 23, 2026 (KAN-30) | lets the audit log record key revocations (`revoke`) |
+
+Without it, revoking a key pair fails with 500 `operation_failed` and changes nothing. Everything else keeps working.
+
 Security rules for these scripts (details in [SECURITY.md](../SECURITY.md)):
 
 - `seed.sql` holds made-up demo data only. Never real API keys, real private keys or real people.

@@ -53,7 +53,9 @@ CREATE TABLE audit_logs (
     api_key_id   UUID                     REFERENCES api_keys (api_key_id),
     key_pair_id  UUID                     REFERENCES key_pairs (key_pair_id),
     action       VARCHAR(12)              NOT NULL
-                 CHECK (action IN ('generate', 'encapsulate', 'decapsulate', 'sign', 'verify', 'rotate')),
+                 -- Named so database/upgrades/ scripts can replace it. 'revoke' added in KAN-30 (upgrade 001).
+                 CONSTRAINT audit_logs_action_check
+                 CHECK (action IN ('generate', 'encapsulate', 'decapsulate', 'sign', 'verify', 'rotate', 'revoke')),
     status       VARCHAR(7)               NOT NULL CHECK (status IN ('success', 'failure')),
     created_at   TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
 );

@@ -1,6 +1,9 @@
 package com.quantumlock.client;
 
-/** Status of a key pair. Only an active key pair can be used for encapsulate and decapsulate. */
+/**
+ * Status of a key pair. An active key pair can do everything. A rotated one can still decapsulate and verify until
+ * its grace period ends. A revoked one can do nothing.
+ */
 public enum KeyStatus {
 
     ACTIVE("active"),

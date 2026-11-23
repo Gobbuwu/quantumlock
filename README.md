@@ -73,6 +73,13 @@ psql -h localhost -U quantumlock -d quantumlock -f database/schema.sql
 psql -h localhost -U quantumlock -d quantumlock -f database/seed.sql
 ```
 
+**Already have a database from before Nov 23, 2026?** Run the upgrade script once, as the PostgreSQL admin user, so the
+audit log accepts key revocations (KAN-30). It is safe to run again:
+
+```bash
+psql -h localhost -U postgres -d quantumlock -v ON_ERROR_STOP=1 -f database/upgrades/001-revoke-action.sql
+```
+
 ## 2. Set the password and the master key (once)
 
 Copy `backend/.env.example` to `backend/.env` and fill in two values:
@@ -118,6 +125,14 @@ Then open:
     message is 1 byte to 32 KiB. The optional context string (at most 255 bytes) ties a signature to one purpose, such
     as "invoices": a signature only verifies with the same context. Anyone can also verify with the public key on
     their own computer, using any FIPS 204 library.
+  - `POST /api/v1/keys/{keyPairId}/rotate` with an optional `{"gracePeriodDays": 7}` makes a new key pair of the
+    same algorithm and returns it. The old one becomes `rotated` and points to its replacement (`replacedBy`). Until
+    its `gracePeriodEndsAt` it can still decapsulate and verify, so data made for it before can still be read, but it
+    can no longer encapsulate, sign or be rotated again. The default grace period is 7 days and the most a caller may
+    ask for is 90. Both can be changed in `backend/.env` (`ROTATION_GRACE_DAYS`, `ROTATION_MAX_GRACE_DAYS`, see
+    `.env.example`). 0 ends the old key pair's use at once.
+  - `POST /api/v1/keys/{keyPairId}/revoke` stops an active or rotated key pair for good. It cannot be undone, and
+    the key pair stays in the list, marked `revoked`, for the record.
   - `POST /api/v1/api-keys`, `GET /api/v1/api-keys` and `DELETE /api/v1/api-keys/{apiKeyId}`
 
 Every endpoint except the health check needs an API key in the `X-API-Key` header. Issue the first key for the
@@ -175,6 +190,9 @@ Tests use an in-memory H2 database, so PostgreSQL does not need to be running. T
   contexts, the size limits, malformed input, wrong key types, other teams' keys and the audit log (`SignatureApiTest`)
 - ML-DSA-65 key generation, signing and verification against NIST's own FIPS 204 test vectors, run through the
   application's code (`MlDsa65KnownAnswerTest`)
+- key rotation and revocation: what each state allows, the grace period and its end, bad grace periods, two
+  rotations (or a rotation and a revocation) at the same moment, other teams' keys and the audit log
+  (`KeyRotationApiTest`)
 
 GitHub Actions runs the same build on every push (`.github/workflows/backend-ci.yml`).
 
@@ -188,9 +206,11 @@ policy) on port 15173. A real browser (Playwright) then refuses a wrong key, gen
 key pair, sees both in the list, and checks that the API key is kept only in memory unless "Remember" is ticked. Any
 content security policy violation fails the test. Next, the Java SDK's sample app generates a third key pair
 (ML-KEM-1024) and agrees on a shared secret through the API, then generates a fourth (ML-DSA-65), signs a message,
-verifies it and checks that a changed copy is refused. A wrong key must be refused with 401. Last, the script checks in
-the database that all four private keys are stored encrypted and that every generate, encapsulate, decapsulate, sign
-and verify call was audited. The database password, `MASTER_KEY` and API key are random for every run and never
+verifies it and checks that a changed copy is refused. A wrong key must be refused with 401. The script then rotates
+the sample app's ML-KEM key pair, revokes the replacement, checks that the rotated key cannot be rotated again and
+runs the database upgrade script twice. Last, it checks in the database that all five private keys are stored
+encrypted, that the rotated key pair points to its replacement with a 1-day grace period, and that every generate,
+encapsulate, decapsulate, sign, verify, rotate and revoke call was audited. The database password, `MASTER_KEY` and API key are random for every run and never
 printed. The script refuses to run if a database or user named `quantumlock_e2e` already exists, and removes both
 at the end.
 

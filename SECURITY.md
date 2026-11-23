@@ -31,6 +31,8 @@ own computer only (no TLS yet). That is the default and it is enforced by the se
 | A stolen database exposes API keys | Keys are 32 bytes from `SecureRandom`, shown once and stored only as their SHA-256 hash, compared with `MessageDigest.isEqual`. A revoked key stops working on the next request | `ApiKeys`, `api_keys.key_hash` |
 | Bad input crashes or probes the key exchange | Ciphertexts are decoded as strict Base64 and must be exactly 1568 bytes before Bouncy Castle sees them. Keys are loaded with the `ML-KEM-1024` key factory only. Every malformed input gets the same 400 `invalid_request`; a tampered but well-formed ciphertext gets a normal answer with a different secret (FIPS 203 implicit rejection). Library failures become a fixed 500 `operation_failed`, logged by type only. Every call is audited | `KeyExchangeService` |
 | One team reads another team's keys | Every key lookup includes the account id. Another team's key, an unknown id and a malformed id all get the same 404 | `KeyPairRepository`, `ApiExceptionHandler` |
+| A retired or compromised key pair stays in use | Rotation replaces a key pair: the old one can only decapsulate and verify, and only until its grace period ends (default 7 days, at most 90). Revocation stops a key pair at once and for good. Every operation checks the state first, and a refused one gets 400 `key_not_active` and is audited. Status changes lock the row, so two at the same moment run one after the other | `KeyPairAccess`, `KeyService`, `KeyPairStore` |
+| Loosely typed input changes meaning | Number fields take JSON numbers only and whole ones: `"7"`, `7.5` and `true` are refused with 400, not turned into 7 | `spring.jackson.*` in `application.yml` |
 | An application using the SDK leaks its API key or a shared secret | The Java SDK sends the key in the `X-API-Key` header only, refuses plain `http://` except on the same computer, never follows redirects, times out every call and checks every answer strictly. The key and secrets never appear in `toString()`, exception messages or logs, and `SharedSecret` can be wiped | `sdk/quantumlock-client` |
 | Floods of requests or API-key guessing | Each API key may make 120 requests per minute. A client address that fails the API-key check 20 times in a minute is refused for the rest of that minute, even with a valid key. Both get 429 `rate_limited` with `Retry-After`, before any other work. Counting uses the connection's address only, never a forwarding header. At most 10,000 keys and 10,000 addresses are tracked: when a table is full, new ones are refused until a minute has passed, so a flood cannot use up memory. Both limits are settings (`RATE_LIMIT_PER_MINUTE`, `RATE_LIMIT_FAILED_CHECKS_PER_MINUTE`) | `RateLimiter`, `ApiKeyAuthFilter` |
 | Secrets or keys committed by accident | `.env` files and key files (`*.pem`, `*.key`, `*.p12`, `*.jks`) are ignored by git | `.gitignore` |
@@ -146,6 +148,19 @@ Done for encapsulation and decapsulation in task 3.4 and for signatures in KAN-2
 - Messages are 1 byte to 32 KiB and context strings at most 255 bytes (FIPS 204), so a request with a message,
   a signature and a context stays under the 64 KiB body limit. Nothing a client sends to sign or verify is
   stored or logged.
+
+### Key rotation and revocation (KAN-30)
+
+Done in KAN-30. Keep these true:
+
+- Check the key pair's state on every operation, in `KeyPairAccess`: active allows everything; rotated allows only
+  decapsulate and verify, and only before `grace_period_ends_at`; revoked allows nothing. New operations must be
+  added to that one rule, not checked on their own.
+- Change a key pair's status only inside `KeyPairStore`, with the row locked (`findForUpdate`) and the audit entry in
+  the same transaction, so a status change and its record are written together or not at all.
+- Generate the replacement key before taking the lock, so the lock is held for a few writes only. A replacement that
+  loses the race is never saved.
+- Revocation cannot be undone, and revoked rows are kept: the audit log refers to them.
 
 ### SDK (task 5.1 and later)
 

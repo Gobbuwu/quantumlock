@@ -8,7 +8,8 @@ public enum AuditAction {
     DECAPSULATE("decapsulate"),
     SIGN("sign"),
     VERIFY("verify"),
-    ROTATE("rotate");
+    ROTATE("rotate"),
+    REVOKE("revoke");
 
     private final String value;
 

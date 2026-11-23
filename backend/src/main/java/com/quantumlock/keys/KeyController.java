@@ -19,7 +19,7 @@ import org.springframework.web.bind.annotation.RestController;
 /** Key pair endpoints (task 3.2). */
 @RestController
 @RequestMapping("/api/v1/keys")
-@Tag(name = "Keys", description = "Generate and list post-quantum key pairs")
+@Tag(name = "Keys", description = "Generate, list, rotate and revoke post-quantum key pairs")
 public class KeyController {
 
     private final KeyService keys;
@@ -48,5 +48,21 @@ public class KeyController {
     @Operation(summary = "Get one key pair of the account")
     public KeyPairResponse get(@PathVariable UUID keyPairId) {
         return KeyPairResponse.from(keys.get(currentAccount.accountId(), keyPairId));
+    }
+
+    @PostMapping("/{keyPairId}/rotate")
+    @Operation(summary = "Replace an active key pair with a new one of the same algorithm. The old one can still "
+            + "decapsulate and verify during the grace period. Returns the new key pair.")
+    public ResponseEntity<KeyPairResponse> rotate(@PathVariable UUID keyPairId,
+            @RequestBody(required = false) RotateKeyRequest request) {
+        KeyPairEntity replacement = keys.rotate(currentAccount.accountId(), currentAccount.apiKeyId(), keyPairId,
+                request == null ? null : request.gracePeriodDays());
+        return ResponseEntity.status(HttpStatus.CREATED).body(KeyPairResponse.from(replacement));
+    }
+
+    @PostMapping("/{keyPairId}/revoke")
+    @Operation(summary = "Stop a key pair for good. It cannot be undone.")
+    public KeyPairResponse revoke(@PathVariable UUID keyPairId) {
+        return KeyPairResponse.from(keys.revoke(currentAccount.accountId(), currentAccount.apiKeyId(), keyPairId));
     }
 }
