@@ -78,3 +78,18 @@ the API docs (`ApiDocsDisabledTest`). All pass. The application has no Actuator 
 | G2 | Maven is downloaded with no checksum | `distributionSha256Sum` added to `maven-wrapper.properties`. Its value is the SHA-256 of the Maven 3.10.1 zip whose SHA-512 matches both Maven Central and archive.apache.org | With the right value the wrapper downloads and runs Maven 3.10.1. With one wrong character it stops with "Failed to validate Maven distribution SHA-256" and exit code 1. Checked with `mvnw` on Linux. `mvnw.cmd` was checked on Windows with JDK 21 on Nov 22: the right value downloads Maven 3.10.1, one changed character stops it with the same error and exit code 1, and `mvnw.cmd -B verify` passes all 176 backend tests |
 | G3 | Stale and partly inconsistent Dependabot PRs | The 8 updates applied together on current `main`: Maven 3.10.1, `actions/checkout` 7.0.1 in both workflows, `actions/setup-java` 6.3.0 (both still pinned to the commit of their release tag, checked with `git ls-remote`), and the 5 dashboard test tools | 176 backend tests and 29 dashboard tests pass, the dashboard build works and `npm audit` finds 0 vulnerabilities |
 | R1 | No dashboard CSP | Fixed in a later change: a strict CSP and security headers on the production build (`npm run preview`). The end-to-end test now uses that build, fails on any CSP violation and checks that an injected inline script is blocked | Fixed. With `font-src` removed from the policy, the test fails with one violation per font file |
+
+## Addendum: ML-DSA-65 signatures (KAN-29)
+
+Added Nov 23, 2026, when sign and verify were added. Written with the help of Claude AI. The checks of section 1 were
+repeated for the new code. Line numbers above refer to commit 017a5f4: the shared checks and the error log line of
+`KeyExchangeService` have since moved to `KeyPairAccess`, which key exchange and signatures both use.
+
+| Check | Result | Evidence |
+|---|---|---|
+| The plaintext private key exists only for one signature and is wiped after use, on success and on failure | Pass | `SignatureService.java:68` (decrypted), `finally` block at `SignatureService.java:75` |
+| Verify never touches the private key | Pass | It uses the stored public key only (`SignatureService.verify`) |
+| No log line, error body or audit row contains a message, signature, context or key | Pass | One `log.error` with the exception type only (`KeyPairAccess.java:64`). Fixed error codes. `SignatureApiTest.messagesSignaturesAndKeysNeverReachTheLogs` captures the log output |
+| Keys are parsed with the ML-DSA-65 key factory only | Pass | `KeyFactory.getInstance("ML-DSA-65", ...)` in `SignatureService` |
+| Inputs are decoded strictly and their sizes checked before Bouncy Castle sees them | Pass | `StrictBase64` (standard alphabet, no line breaks, one spelling per value). `SignatureApiTest.badSignRequestsGetOneFixedAnswer` and `badVerifyRequestsGetOneFixedAnswer` |
+| The implementation matches FIPS 204 | Pass | 70 NIST ACVP vectors for ML-DSA-65 (key generation, deterministic and hedged signing, verification) run through the application's code in `MlDsa65KnownAnswerTest`, plus a check that an independent Bouncy Castle verifier accepts the API's signatures (`SignatureApiTest`) |

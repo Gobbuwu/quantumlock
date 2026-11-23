@@ -112,6 +112,12 @@ Then open:
     `sharedSecret`. ML-KEM-1024 key pairs only. A sender can also encapsulate with the public key on their own
     computer and send only the ciphertext. The `sharedSecret` is the 32-byte FIPS 203 output K with no extra key
     derivation, so it matches what any other FIPS 203 ML-KEM library computes.
+  - `POST /api/v1/keys/{keyPairId}/sign` with `{"message": "...", "context": "..."}` returns a 3309-byte
+    `signature`; `POST /api/v1/keys/{keyPairId}/verify` with `{"message": "...", "signature": "...", "context": "..."}`
+    returns `{"valid": true}` or `{"valid": false}`. ML-DSA-65 key pairs only (FIPS 204). All values are Base64. The
+    message is 1 byte to 32 KiB. The optional context string (at most 255 bytes) ties a signature to one purpose, such
+    as "invoices": a signature only verifies with the same context. Anyone can also verify with the public key on
+    their own computer, using any FIPS 204 library.
   - `POST /api/v1/api-keys`, `GET /api/v1/api-keys` and `DELETE /api/v1/api-keys/{apiKeyId}`
 
 Every endpoint except the health check needs an API key in the `X-API-Key` header. Issue the first key for the
@@ -156,6 +162,10 @@ Tests use an in-memory H2 database, so PostgreSQL does not need to be running. T
   through the application's code (`MlKem1024KnownAnswerTest`)
 - ML-KEM-1024 and ML-DSA-65 round trips (`PostQuantumSmokeTest`) and how Bouncy Castle reacts to tampered
   ciphertexts, malformed keys and forged signatures (`PostQuantumMisuseTest`)
+- ML-DSA-65 signatures through the API: round trips, an independent verifier, tampered messages, signatures and
+  contexts, the size limits, malformed input, wrong key types, other teams' keys and the audit log (`SignatureApiTest`)
+- ML-DSA-65 key generation, signing and verification against NIST's own FIPS 204 test vectors, run through the
+  application's code (`MlDsa65KnownAnswerTest`)
 
 GitHub Actions runs the same build on every push (`.github/workflows/backend-ci.yml`).
 
@@ -168,9 +178,10 @@ and demo data, the backend on port 18080, one API key and the dashboard's produc
 policy) on port 15173. A real browser (Playwright) then refuses a wrong key, generates an ML-KEM-1024 and an ML-DSA-65
 key pair, sees both in the list, and checks that the API key is kept only in memory unless "Remember" is ticked. Any
 content security policy violation fails the test. Next, the Java SDK's sample app generates a third key pair
-(ML-KEM-1024) and agrees on a shared secret through the API, and a wrong key must be refused with 401. Last, the script
-checks in the database that all three private keys are stored encrypted and that every generate, encapsulate and
-decapsulate call was audited. The database password, `MASTER_KEY` and API key are random for every run and never
+(ML-KEM-1024) and agrees on a shared secret through the API, then generates a fourth (ML-DSA-65), signs a message,
+verifies it and checks that a changed copy is refused. A wrong key must be refused with 401. Last, the script checks in
+the database that all four private keys are stored encrypted and that every generate, encapsulate, decapsulate, sign
+and verify call was audited. The database password, `MASTER_KEY` and API key are random for every run and never
 printed. The script refuses to run if a database or user named `quantumlock_e2e` already exists, and removes both
 at the end.
 
