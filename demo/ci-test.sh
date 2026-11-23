@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Checks the demo scripts the way a person uses them (KAN-26): setup, a second setup that must refuse, start, real
-# requests through the dashboard, Ctrl+C in a terminal, then remove. Run by .github/workflows/demo.yml.
+# Checks the demo scripts the way a person uses them (KAN-26): the API key hand-over in a terminal (KAN-34), setup, a
+# second setup that must refuse, start, real requests through the dashboard, Ctrl+C in a terminal, then remove. Run by
+# .github/workflows/demo.yml.
 #
 #   demo/ci-test.sh sh     tests setup.sh, start.sh and remove.sh
 #   demo/ci-test.sh ps1    tests setup.ps1, start.ps1 and remove.ps1 (needs pwsh)
@@ -17,11 +18,15 @@ WORK="$(mktemp -d)"
 chmod 700 "$WORK"
 case "$FLAVOR" in
   sh)
-    SETUP=("$ROOT/demo/setup.sh" --db-name "$DB" --env-file "$ENV_FILE")
+    SETUP=("$ROOT/demo/setup.sh" --db-name "$DB" --env-file "$ENV_FILE" --show-key)
+    QUIET_SETUP=("$ROOT/demo/setup.sh" --db-name "$DB" --env-file "$ENV_FILE")
+    HAND_OVER=(bash -c 'source "$QL_ROOT/demo/common.sh"; hand_over_key "$QL_KEY" false')
     START=("$ROOT/demo/start.sh" --env-file "$ENV_FILE")
     REMOVE=("$ROOT/demo/remove.sh" --db-name "$DB" --env-file "$ENV_FILE" --confirm-db-name "$DB") ;;
   ps1)
-    SETUP=(pwsh -NoProfile -File "$ROOT/demo/setup.ps1" -DbName "$DB" -EnvFile "$ENV_FILE")
+    SETUP=(pwsh -NoProfile -File "$ROOT/demo/setup.ps1" -DbName "$DB" -EnvFile "$ENV_FILE" -ShowKey)
+    QUIET_SETUP=(pwsh -NoProfile -File "$ROOT/demo/setup.ps1" -DbName "$DB" -EnvFile "$ENV_FILE")
+    HAND_OVER=(pwsh -NoProfile -Command '. (Join-Path $env:QL_ROOT "demo/common.ps1"); Send-ApiKey $env:QL_KEY $false')
     START=(pwsh -NoProfile -File "$ROOT/demo/start.ps1" -EnvFile "$ENV_FILE")
     REMOVE=(pwsh -NoProfile -File "$ROOT/demo/remove.ps1" -DbName "$DB" -EnvFile "$ENV_FILE" -ConfirmDbName "$DB") ;;
   *) echo "Usage: demo/ci-test.sh sh|ps1" >&2; exit 2 ;;
@@ -42,6 +47,83 @@ cleanup() {
 }
 trap cleanup EXIT
 db_exists && fail "$DB already exists"
+
+log "Setup without a terminal must refuse, unless asked to print the key"
+# Its output could be a log file, and with no terminal there is no one to press C or S.
+if "${QUIET_SETUP[@]}" </dev/null >"$WORK/quiet.out" 2>&1; then fail "setup without a terminal succeeded"; fi
+grep -q 'not one' "$WORK/quiet.out" || { cat "$WORK/quiet.out"; fail "setup without a terminal failed for another reason"; }
+! db_exists && [ ! -e "$ENV_FILE" ] || fail "setup without a terminal changed something"
+echo "Refused, nothing changed."
+
+log "The API key hand-over shows the key only on request (KAN-34)"
+# Runs the hand-over in a pseudo-terminal, as in a terminal window, and presses keys at each prompt. The key is a
+# random one made here, not a real key.
+cat >"$WORK/keys.py" <<'PY'
+import os, pty, select, signal, sys, time
+out_path, keys, cmd = sys.argv[1], sys.argv[2].split(','), sys.argv[3:]
+send = [b'\r' if k == 'enter' else k.encode() for k in keys]
+pid, fd = pty.fork()
+if pid == 0:
+    os.execvp(cmd[0], cmd)
+data, sent, deadline = b'', 0, time.time() + 120
+while time.time() < deadline:
+    if select.select([fd], [], [], 0.2)[0]:
+        try:
+            chunk = os.read(fd, 4096)
+        except OSError:
+            break
+        if not chunk:
+            break
+        data += chunk
+    if sent < len(send) and data.count(b'finish: ') > sent:
+        time.sleep(0.2)
+        os.write(fd, send[sent])
+        sent += 1
+else:
+    os.kill(pid, signal.SIGKILL)
+with open(out_path, 'wb') as out:
+    out.write(data)
+status = os.waitpid(pid, 0)[1]
+sys.exit(os.waitstatus_to_exitcode(status) if sent == len(send) else 99)
+PY
+QL_KEY="ql_test_$(openssl rand -base64 32 | tr '+/' '-_' | tr -d '=')"
+export QL_KEY QL_ROOT="$ROOT"
+MASKED="${QL_KEY:0:8}...${QL_KEY: -4}"
+hand_over() {
+  local status=0
+  python3 -I "$WORK/keys.py" "$WORK/$1.out" "$2" "${HAND_OVER[@]}" || status=$?
+  [ "$status" -eq 0 ] || { cat -v "$WORK/$1.out"; fail "the hand-over ($1) exited with $status"; }
+}
+# Enter alone first warns that the key cannot be shown again, then finishes: the key never appears.
+hand_over finish enter,enter
+grep -qF -- "$MASKED" "$WORK/finish.out" || fail "the masked key was not shown"
+grep -q 'neither copied nor shown' "$WORK/finish.out" || fail "finishing without the key did not warn"
+! grep -qF -- "$QL_KEY" "$WORK/finish.out" || fail "the key was shown without S"
+# S shows it once, after the masked form.
+hand_over show s,enter
+[ "$(grep -cF -- "$QL_KEY" "$WORK/show.out")" = 1 ] || { cat -v "$WORK/show.out"; fail "S did not show the key exactly once"; }
+python3 -I -c 'import sys; d = open(sys.argv[1], "rb").read(); sys.exit(0 if 0 <= d.find(sys.argv[2].encode()) < d.find(b"finish: ") < d.find(sys.argv[3].encode()) else 1)' \
+  "$WORK/show.out" "$MASKED" "$QL_KEY" || fail "the key appeared before S was pressed"
+! grep -q 'neither copied nor shown' "$WORK/show.out" || fail "finishing after S warned"
+if [ "$FLAVOR" = sh ]; then
+  # C copies through a stand-in for pbcopy (macOS), which records what it was given. Enter must clear it again.
+  mkdir "$WORK/bin"
+  printf '#!/bin/sh\ncat >"$QL_CLIP"\ncat "$QL_CLIP" >>"$QL_CLIP.got"\n' >"$WORK/bin/pbcopy"
+  printf '#!/bin/sh\ncat "$QL_CLIP"\n' >"$WORK/bin/pbpaste"
+  chmod 700 "$WORK/bin/pbcopy" "$WORK/bin/pbpaste"
+  export QL_CLIP="$WORK/clipboard"
+  PATH="$WORK/bin:$PATH" hand_over copy c,enter
+  [ "$(cat "$QL_CLIP.got")" = "$QL_KEY" ] || fail "C did not copy the key"
+  [ ! -s "$QL_CLIP" ] || fail "Enter did not clear the clipboard"
+  grep -q 'Clipboard cleared' "$WORK/copy.out" || fail "clearing the clipboard was not reported"
+  ! grep -qF -- "$QL_KEY" "$WORK/copy.out" || fail "C showed the key"
+  echo "Masked until S, copied with C and cleared with Enter, warned when neither was used."
+else
+  # PowerShell offers C on Windows only, where the copy can be kept out of clipboard history.
+  ! grep -qF '[C]' "$WORK/finish.out" || fail "C was offered on a system where the copy cannot be kept private"
+  echo "Masked until S, warned when the key was neither copied nor shown, no C outside Windows."
+fi
+unset QL_KEY
 
 log "Setup"
 "${SETUP[@]}" >"$WORK/setup.out" 2>&1 || { status=$?; cat "$WORK/setup.out"; fail "setup exited with $status"; }

@@ -207,3 +207,83 @@ function Show-LogTail([string]$Path) {
         Get-Content -LiteralPath $Path -Tail 30 | ForEach-Object { Write-Host $_ }
     }
 }
+
+# Setup hands the new API key over without printing it (KAN-34): it shows a masked form, and the person presses C to
+# copy the key or S to show it. The key is never put on a command line, in a file or in a log.
+function Test-Terminal { return -not ([Console]::IsInputRedirected -or [Console]::IsOutputRedirected) }
+
+function Get-MaskedKey([string]$Key) { return $Key.Substring(0, 8) + '...' + $Key.Substring($Key.Length - 4) }
+
+# Copying is offered on Windows only, where the copy can be kept out of clipboard history and cloud sync. It needs a
+# single-threaded apartment, which Windows PowerShell (and so setup.cmd) has by default.
+function Test-SecretClipboard {
+    if (-not $OnWindows) { return $false }
+    if ([Threading.Thread]::CurrentThread.GetApartmentState() -ne [Threading.ApartmentState]::STA) { return $false }
+    try { Add-Type -AssemblyName System.Windows.Forms; return $true } catch { return $false }
+}
+
+# The three formats tell Windows not to keep the text in clipboard history (Win+V) and not to sync it to other
+# devices: https://learn.microsoft.com/en-us/windows/win32/dataxchg/clipboard-formats
+function Set-SecretClipboard([string]$Text) {
+    $data = New-Object System.Windows.Forms.DataObject
+    $data.SetData([System.Windows.Forms.DataFormats]::UnicodeText, $Text)
+    foreach ($format in @('ExcludeClipboardContentFromMonitorProcessing', 'CanIncludeInClipboardHistory', 'CanUploadToCloudClipboard')) {
+        $data.SetData($format, (New-Object IO.MemoryStream (, [BitConverter]::GetBytes([int32]0))))
+    }
+    [System.Windows.Forms.Clipboard]::SetDataObject($data, $true, 5, 100)
+}
+
+function Get-ClipboardText { return [System.Windows.Forms.Clipboard]::GetText() }
+
+# With -ShowKey the key is printed. Otherwise it is masked, and the person chooses C (copy), S (show) or Enter
+# (finish). Enter clears the clipboard if it still holds the key, and asks once more when the key was neither copied
+# nor shown, because it cannot be shown again.
+function Send-ApiKey([string]$Key, [bool]$ShowKey) {
+    Write-Host 'API key for the demo team. It is shown only this once: keep it somewhere safe and never commit it.'
+    Write-Host ''
+    if ($ShowKey) {
+        Write-Host "    $Key"
+        Write-Host ''
+        return
+    }
+    Write-Host "    $(Get-MaskedKey $Key) (hidden)"
+    Write-Host ''
+    $canCopy = Test-SecretClipboard
+    $copied = $false
+    $shown = $false
+    $warned = $false
+    while ($true) {
+        if ($canCopy) { Write-Host -NoNewline '[C] copy it   [S] show it   [Enter] finish: ' }
+        else { Write-Host -NoNewline '[S] show it   [Enter] finish: ' }
+        $pressed = [Console]::ReadKey($true)
+        Write-Host ''
+        if ($pressed.Key -eq [ConsoleKey]::Enter) {
+            if (-not ($copied -or $shown -or $warned)) {
+                Write-Host 'The key was neither copied nor shown, and it cannot be shown again. Press Enter again to finish anyway.'
+                $warned = $true
+                continue
+            }
+            break
+        }
+        if ($pressed.Key -eq [ConsoleKey]::C -and $canCopy) {
+            try {
+                Set-SecretClipboard $Key
+                $copied = ((Get-ClipboardText) -ceq $Key)
+            }
+            catch { $copied = $false }
+            if ($copied) { Write-Host 'Copied, and kept out of clipboard history. Paste it where you keep secrets, then press Enter: that clears the clipboard.' }
+            else { Write-Host 'Copying did not work. Press S to show the key instead.' }
+        }
+        elseif ($pressed.Key -eq [ConsoleKey]::S) {
+            Write-Host ''
+            Write-Host "    $Key"
+            Write-Host ''
+            $shown = $true
+        }
+    }
+    if ($copied -and ((Get-ClipboardText) -ceq $Key)) {
+        [System.Windows.Forms.Clipboard]::Clear()
+        Write-Host 'Clipboard cleared.'
+    }
+    Write-Host ''
+}

@@ -36,6 +36,7 @@ own computer only (no TLS yet). That is the default and it is enforced by the se
 | Loosely typed input changes meaning | Number fields take JSON numbers only and whole ones: `"7"`, `7.5` and `true` are refused with 400, not turned into 7 | `spring.jackson.*` in `application.yml` |
 | An application using the SDK leaks its API key or a shared secret | The Java SDK sends the key in the `X-API-Key` header only, refuses plain `http://` except on the same computer, never follows redirects, times out every call and checks every answer strictly. The key and secrets never appear in `toString()`, exception messages or logs, and `SharedSecret` can be wiped | `sdk/quantumlock-client` |
 | Floods of requests or API-key guessing | Each API key may make 120 requests per minute. A client address that fails the API-key check 20 times in a minute is refused for the rest of that minute, even with a valid key. Both get 429 `rate_limited` with `Retry-After`, before any other work. Counting uses the connection's address only, never a forwarding header. At most 10,000 keys and 10,000 addresses are tracked: when a table is full, new ones are refused until a minute has passed, so a flood cannot use up memory. Both limits are settings (`RATE_LIMIT_PER_MINUTE`, `RATE_LIMIT_FAILED_CHECKS_PER_MINUTE`) | `RateLimiter`, `ApiKeyAuthFilter` |
+| The API key shows on screen, in a screenshot or in a saved log | Demo setup shows a new key masked (`ql_test_...` and the last four characters) and prints it in full only when the person presses S or passes `--show-key`. C copies it: on Windows the copy is marked so it stays out of clipboard history and is not synced to other devices, and Enter clears the clipboard if it still holds the key. The key reaches a clipboard tool through standard input only, never a command line or a file. Without a terminal, setup stops before it changes anything. The dashboard's key field stays hidden unless Show is pressed and hides again when the form is sent | `demo/common.ps1`, `demo/common.sh`, `ApiKeyForm` |
 | Secrets or keys committed by accident | `.env` files and key files (`*.pem`, `*.key`, `*.p12`, `*.jks`) are ignored by git | `.gitignore` |
 
 ## How it is checked
@@ -65,6 +66,9 @@ own computer only (no TLS yet). That is the default and it is enforced by the se
   or switches error details back on.
 - `PostQuantumMisuseTest` feeds Bouncy Castle tampered ciphertexts, malformed and swapped keys, corrupted
   stored private keys and forged signatures, and pins down how it reacts.
+- `demo/ci-test.sh` (GitHub Actions `demo.yml`, for the bash and the PowerShell scripts) runs the API key hand-over
+  in a pseudo-terminal and presses keys: only the masked key appears until S, finishing without copying or showing
+  warns first, C copies through a stand-in clipboard and Enter clears it, and setup without a terminal changes nothing.
 - The SDK's own tests (`cd sdk && mvn verify`, GitHub Actions `sdk-ci.yml`) check the header, the refused URLs
   and redirects, every error code, strict response checks and that no key or secret shows up in any message.
 
@@ -72,6 +76,10 @@ own computer only (no TLS yet). That is the default and it is enforced by the se
 
 Nothing here makes the application impossible to attack. These gaps are known and accepted for now:
 
+- **The key hand-over relies on the person.** Once shown with S, the key stays in the terminal's scrollback. On macOS
+  and Linux a clipboard manager may keep a copy, because there is no common way to mark it private; the PowerShell
+  script therefore offers C on Windows only. The backend's own `issue-api-key` command, used when setting up by
+  hand, still prints the key in full.
 - **Rate limits live in memory, per backend.** They restart at zero when the backend restarts, and two backends
   would each count separately. The windows are fixed minutes, so a client can make up to twice the limit across the
   turn of a minute. Behind a reverse proxy every client has the proxy's address: the proxy must then do the
@@ -196,6 +204,8 @@ Done in task 5.1. Keep these true when the SDK grows:
   test fails on any violation, so a change that breaks the policy is found at once.
 - No API key in the React source or in any committed file. Done in task 4.2: the user types the key in, it is kept
   in memory (or, if they choose, in `sessionStorage` until the tab closes) and sent only in the `X-API-Key` header.
+- Done in KAN-34: the key field is a password field. Show reveals it only on request and the field hides it again
+  when the form is sent. Never print a whole API key where the person did not ask for it.
 - Done in KAN-33: what is typed into Sign and Verify stays in component state only, never in storage, the address
   or a log. Revoking asks for a second, explicit confirmation. The page offers only what a key pair's state allows,
   but the API's checks stay the rule: the page must never be the only check.

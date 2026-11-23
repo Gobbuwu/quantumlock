@@ -7,9 +7,12 @@
 # It refuses to run when the settings file, the database or the user already exists, so it never overwrites
 # anything. If a step fails, everything it created is removed again.
 #
-#   demo/setup.sh [--db-name NAME] [--env-file PATH]
+#   demo/setup.sh [--db-name NAME] [--env-file PATH] [--show-key]
 #
 # NAME is the database and user name (default quantumlock). PATH is the settings file (default backend/.env).
+# The API key is shown masked, with keys to copy or show it, so it does not appear on screen unless you ask. Without
+# a terminal setup stops before it changes anything. --show-key prints the key instead, for scripts: keep that output
+# private.
 # PostgreSQL administrator: PGHOST, PGPORT, PGUSER (defaults localhost, 5432, postgres) and PGPASSWORD,
 # which is asked for when it is not set.
 
@@ -18,15 +21,20 @@ source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 
 DB_NAME=quantumlock
 ENV_FILE="$ROOT/backend/.env"
+SHOW_KEY=false
 while [ $# -gt 0 ]; do
   case "$1" in
     --db-name) [ $# -ge 2 ] || fail "--db-name needs a value"; DB_NAME="$2"; shift 2 ;;
     --env-file) [ $# -ge 2 ] || fail "--env-file needs a value"; ENV_FILE="$(absolute_path "$2")"; shift 2 ;;
-    -h|--help) sed -n '2,15p' "$0"; exit 0 ;;
+    --show-key) SHOW_KEY=true; shift ;;
+    -h|--help) sed -n '2,18p' "$0"; exit 0 ;;
     *) fail "Unknown option $1 (see --help)" ;;
   esac
 done
 check_db_name "$DB_NAME"
+if [ "$SHOW_KEY" = false ] && ! is_terminal; then
+  fail "Setup hands over the API key in a terminal window, and this is not one. Run it in a terminal, or add --show-key to print the key (then keep the output private). Nothing was changed."
+fi
 
 CREATED_DB=false
 WROTE_ENV=false
@@ -109,12 +117,10 @@ unset ISSUE_OUT
 CREATED_DB=false
 WROTE_ENV=false
 step "Done"
+echo "The database $DB_NAME and $ENV_FILE are ready."
+echo
+hand_over_key "$API_KEY" "$SHOW_KEY"
+unset API_KEY
 cat <<DONE
-The database $DB_NAME and $ENV_FILE are ready.
-
-API key for the demo team. It is shown only this once: copy it somewhere safe and never commit it.
-
-    $API_KEY
-
 Next: run demo/start.sh$([ "$ENV_FILE" = "$ROOT/backend/.env" ] || printf ' --env-file %q' "$ENV_FILE"), open the dashboard address it prints and paste the key.
 DONE

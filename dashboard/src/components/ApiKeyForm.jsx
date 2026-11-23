@@ -4,16 +4,19 @@ import { describeError } from '../api/client.js'
 
 /**
  * Asks for the team's API key and checks it with the API before showing any keys (task 4.2).
- * The input is a password field, so the key is not shown on screen or offered for autofill.
+ * The input is a password field, so the key is not shown on screen or offered for autofill. Show reveals it only
+ * while the person wants to check what they pasted, and the field hides it again when the form is sent (KAN-34).
  */
 export default function ApiKeyForm({ api, keyStore, onAccepted, notice }) {
   const [value, setValue] = useState('')
   const [remember, setRemember] = useState(false)
+  const [visible, setVisible] = useState(false)
   const [busy, setBusy] = useState(false)
   const [problem, setProblem] = useState(null)
 
   async function handleSubmit(event) {
     event.preventDefault()
+    setVisible(false)
     const key = value.trim()
     if (!isWellFormedApiKey(key)) {
       setProblem('That is not a QuantumLock API key. A key starts with ql_test_ and is 51 characters long.')
@@ -46,19 +49,33 @@ export default function ApiKeyForm({ api, keyStore, onAccepted, notice }) {
         The dashboard sends it to the API with every request. Issue one with the backend’s{' '}
         <code>issue-api-key</code> command (see the README). It is shown only once when it is issued.
       </p>
-      <label className="field">
-        <span>API key</span>
-        <input
-          type="password"
-          name="api-key"
-          autoComplete="off"
-          spellCheck={false}
-          value={value}
-          onChange={(event) => setValue(event.target.value)}
-          disabled={busy}
-          required
-        />
-      </label>
+      <div className="field">
+        <label htmlFor="api-key-input">API key</label>
+        <div className="field-row">
+          <input
+            id="api-key-input"
+            type={visible ? 'text' : 'password'}
+            name="api-key"
+            autoComplete="off"
+            autoCapitalize="off"
+            autoCorrect="off"
+            spellCheck={false}
+            value={value}
+            onChange={(event) => setValue(event.target.value)}
+            disabled={busy}
+            required
+          />
+          <button
+            type="button"
+            className="button-secondary"
+            aria-controls="api-key-input"
+            onClick={() => setVisible((shown) => !shown)}
+            disabled={busy}
+          >
+            {visible ? 'Hide' : 'Show'}
+          </button>
+        </div>
+      </div>
       <label className="check">
         <input type="checkbox" checked={remember} onChange={(event) => setRemember(event.target.checked)} />
         <span>Remember until this browser tab is closed</span>

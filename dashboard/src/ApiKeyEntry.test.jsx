@@ -53,6 +53,28 @@ describe('API key entry', () => {
     expect(screen.queryByRole('table')).not.toBeInTheDocument()
   })
 
+  it('shows the typed key only while Show is on, and hides it again when the form is sent', async () => {
+    const { user } = setup()
+    const field = screen.getByLabelText('API key')
+
+    await user.type(field, OTHER_KEY)
+    expect(field).toHaveAttribute('type', 'password')
+
+    await user.click(screen.getByRole('button', { name: 'Show' }))
+    expect(field).toHaveAttribute('type', 'text')
+    expect(field).toHaveValue(OTHER_KEY)
+    expect(field).toHaveAttribute('spellcheck', 'false')
+
+    await user.click(screen.getByRole('button', { name: 'Hide' }))
+    expect(field).toHaveAttribute('type', 'password')
+
+    await user.click(screen.getByRole('button', { name: 'Show' }))
+    await user.click(screen.getByRole('button', { name: 'Use this key' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(/did not accept this API key/)
+    expect(screen.getByLabelText('API key')).toHaveAttribute('type', 'password')
+    expect(screen.getByRole('button', { name: 'Show' })).toBeInTheDocument()
+  })
+
   it('shows the keys once the API accepts the key, and keeps it out of storage', async () => {
     const { user, storage } = setup()
 

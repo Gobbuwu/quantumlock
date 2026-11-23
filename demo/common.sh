@@ -88,3 +88,92 @@ SELECT 1 FROM pg_database WHERE datname = :'name' UNION SELECT 1 FROM pg_roles W
 SQL
 )" ]
 }
+
+# Setup hands the new API key over without printing it (KAN-34): it shows a masked form, and the person presses C to
+# copy the key or S to show it. The key reaches a clipboard tool through standard input only, never as a command
+# argument, and is never written to a file or a log.
+is_terminal() { [ -t 0 ] && [ -t 1 ]; }
+
+masked_key() { printf '%s...%s' "${1:0:8}" "${1: -4}"; }
+
+# The clipboard tool of this desktop, or nothing when there is none (for example over SSH).
+clipboard_tool() {
+  if command -v pbcopy >/dev/null 2>&1 && command -v pbpaste >/dev/null 2>&1; then echo pbcopy
+  elif [ -n "${WAYLAND_DISPLAY:-}" ] && command -v wl-copy >/dev/null 2>&1 && command -v wl-paste >/dev/null 2>&1; then echo wl-copy
+  elif [ -n "${DISPLAY:-}" ] && command -v xclip >/dev/null 2>&1; then echo xclip
+  elif [ -n "${DISPLAY:-}" ] && command -v xsel >/dev/null 2>&1; then echo xsel
+  fi
+}
+
+# Copies standard input to the clipboard.
+clipboard_copy() {
+  case "$1" in
+    pbcopy) pbcopy ;;
+    wl-copy) wl-copy ;;
+    xclip) xclip -selection clipboard -in >/dev/null 2>&1 ;;
+    xsel) xsel --clipboard --input ;;
+  esac
+}
+
+clipboard_read() {
+  case "$1" in
+    pbcopy) pbpaste ;;
+    wl-copy) wl-paste --no-newline ;;
+    xclip) xclip -selection clipboard -out ;;
+    xsel) xsel --clipboard --output ;;
+  esac 2>/dev/null
+}
+
+clipboard_clear() {
+  case "$1" in
+    pbcopy) printf '' | pbcopy ;;
+    wl-copy) wl-copy --clear ;;
+    xclip) printf '' | xclip -selection clipboard -in >/dev/null 2>&1 ;;
+    xsel) xsel --clipboard --clear ;;
+  esac 2>/dev/null || true
+}
+
+# hand_over_key KEY true|false. With true the key is printed (--show-key). Otherwise it is masked, and the person
+# chooses C (copy), S (show) or Enter (finish). Enter clears the clipboard if it still holds the key, and asks once
+# more when the key was neither copied nor shown, because it cannot be shown again.
+hand_over_key() {
+  local key="$1" tool choice copied=false shown=false warned=false
+  echo "API key for the demo team. It is shown only this once: keep it somewhere safe and never commit it."
+  echo
+  if [ "$2" = true ]; then
+    printf '    %s\n\n' "$key"
+    return
+  fi
+  printf '    %s (hidden)\n\n' "$(masked_key "$key")"
+  tool="$(clipboard_tool)"
+  while true; do
+    if [ -n "$tool" ]; then printf '[C] copy it   [S] show it   [Enter] finish: '; else printf '[S] show it   [Enter] finish: '; fi
+    IFS= read -rsn1 choice || { echo; break; }
+    echo
+    case "$choice" in
+      c|C)
+        if [ -z "$tool" ]; then continue; fi
+        if printf '%s' "$key" | clipboard_copy "$tool" && [ "$(clipboard_read "$tool")" = "$key" ]; then
+          copied=true
+          echo "Copied. Paste it where you keep secrets, then press Enter: that clears the clipboard."
+        else
+          echo "Copying did not work. Press S to show the key instead."
+        fi ;;
+      s|S)
+        printf '\n    %s\n\n' "$key"
+        shown=true ;;
+      '')
+        if [ "$copied" = false ] && [ "$shown" = false ] && [ "$warned" = false ]; then
+          echo "The key was neither copied nor shown, and it cannot be shown again. Press Enter again to finish anyway."
+          warned=true
+          continue
+        fi
+        break ;;
+    esac
+  done
+  if [ "$copied" = true ] && [ "$(clipboard_read "$tool")" = "$key" ]; then
+    clipboard_clear "$tool"
+    echo "Clipboard cleared."
+  fi
+  echo
+}
