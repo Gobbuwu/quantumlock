@@ -61,6 +61,19 @@ test('the page is served with a strict content security policy that blocks inlin
   cspViolations = [] // expected here; any other violation still fails
 })
 
+test('the key field is masked but is not a password field, so the browser offers no login to save (KAN-39)', async ({ page }) => {
+  await page.goto('/')
+  const field = page.getByLabel('API key', { exact: true })
+  await field.fill(WRONG_KEY)
+  await expect(page.locator('input[type="password"]')).toHaveCount(0)
+  const masking = () => field.evaluate((el) => getComputedStyle(el).webkitTextSecurity)
+  expect(await masking()).toBe('disc')
+  await page.getByRole('button', { name: 'Show' }).click()
+  expect(await masking()).toBe('none')
+  await page.getByRole('button', { name: 'Hide' }).click()
+  expect(await masking()).toBe('disc')
+})
+
 test('a key that was never issued is refused', async ({ page }) => {
   await page.goto('/')
   await enterKey(page, WRONG_KEY)
