@@ -398,4 +398,4 @@ run if a database or user named `quantumlock_e2e` already exists, and removes bo
 
 ## AI use
 
-Parts of this code were drafted with the help of Claude AI and reviewed by the team, as allowed by the course AI policy.
+Parts of this code were drafted with the help of Claude AI and reviewed by Quang Dung Le, as allowed by the course AI policy.
