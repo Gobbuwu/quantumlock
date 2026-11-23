@@ -156,6 +156,22 @@ class ApiSecurityTest {
     }
 
     @Test
+    void crossSiteRequestsAreRefusedBeforeTheKeyCheck() throws IOException {
+        // KAN-36: what a browser sends when a hostile page loads an image from the API.
+        String request = "GET /api/v1/keys HTTP/1.1\r\n"
+                + "Host: 127.0.0.1\r\n"
+                + "Sec-Fetch-Site: cross-site\r\n"
+                + "Sec-Fetch-Mode: no-cors\r\n"
+                + "Sec-Fetch-Dest: image\r\n"
+                + "Connection: close\r\n\r\n";
+
+        String response = send(request.getBytes(StandardCharsets.ISO_8859_1));
+
+        assertEquals(403, statusOf(response));
+        assertTrue(response.endsWith("{\"error\":\"cross_site_request\"}"), response);
+    }
+
+    @Test
     void pathTrickCannotSwitchOffTheStrictHeaders() throws IOException {
         // Swagger UI pages are the only ones without the strict CSP. A path that merely starts like one must not qualify.
         String response = send(get("/swagger-ui/../api/v1/health", "localhost"));

@@ -12,6 +12,7 @@ import java.util.List;
 import jakarta.servlet.ReadListener;
 import jakarta.servlet.ServletInputStream;
 import org.junit.jupiter.api.Test;
+import org.springframework.mock.web.MockHttpServletRequest;
 
 /**
  * Unit tests for the decisions the security filters make. Plain JUnit, no Spring context.
@@ -58,6 +59,44 @@ class SecurityFiltersTest {
     void anEmptyAllowListIsAConfigurationError() {
         assertThrows(IllegalArgumentException.class, () -> AllowedHostsFilter.fromCommaSeparated(" , "));
         assertThrows(IllegalArgumentException.class, () -> new AllowedHostsFilter(List.of()));
+    }
+
+    // ---- Cross-site requests (KAN-36) ----
+
+    private static final AllowedHostsFilter LOCAL = AllowedHostsFilter.fromCommaSeparated("localhost,127.0.0.1");
+
+    private static boolean crossSite(String... headers) {
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/v1/keys");
+        for (int i = 0; i < headers.length; i += 2) {
+            request.addHeader(headers[i], headers[i + 1]);
+        }
+        return ApiKeyAuthFilter.isCrossSite(request, LOCAL::isAllowed);
+    }
+
+    @Test
+    void programsAndTheDashboardAreNotCrossSite() {
+        assertFalse(crossSite(), "the SDK, curl and the demo send neither header");
+        assertFalse(crossSite("Sec-Fetch-Site", "same-origin", "Origin", "http://127.0.0.1:4173"), "dashboard");
+        assertFalse(crossSite("Sec-Fetch-Site", "same-origin", "Origin", "http://localhost:8080"), "Swagger UI");
+        assertFalse(crossSite("Sec-Fetch-Site", "none"), "typed into the address bar");
+        assertFalse(crossSite("Sec-Fetch-Site", "Same-Origin"));
+        assertFalse(crossSite("Origin", "HTTP://LOCALHOST:5173"), "an older browser on the dashboard");
+    }
+
+    @Test
+    void otherSitesAreCrossSite() {
+        assertTrue(crossSite("Sec-Fetch-Site", "cross-site"), "an image on a hostile page");
+        assertTrue(crossSite("Sec-Fetch-Site", "same-site"), "another port on this computer");
+        assertTrue(crossSite("Sec-Fetch-Site", "something-new"), "an unknown value");
+        assertTrue(crossSite("Sec-Fetch-Site", "same-origin", "Sec-Fetch-Site", "cross-site"), "a second header");
+        assertTrue(crossSite("Origin", "https://evil.example"));
+        assertTrue(crossSite("Origin", "http://localhost.evil.example"));
+        assertTrue(crossSite("Origin", "null"), "a sandboxed page or a local file");
+        assertTrue(crossSite("Origin", "file:///C:/page.html"));
+        assertTrue(crossSite("Origin", "chrome-extension://abc"));
+        assertTrue(crossSite("Origin", "not a url"));
+        assertTrue(crossSite("Origin", ""));
+        assertTrue(crossSite("Sec-Fetch-Site", "same-origin", "Origin", "https://evil.example"), "both must agree");
     }
 
     // ---- Security headers: which paths are exempt from the strict CSP ----
